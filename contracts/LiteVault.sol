@@ -11,6 +11,8 @@ error LiteVault__InvalidParams();
 error LiteVault__Unauthorized();
 error LiteVault__MinimumThreshold();
 
+/// @title LiteVault
+/// @notice ERC4626 compatible vault taking ERC20 asset and investing it via bridge on mainnet
 contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     using Math for uint256;
     using SafeERC20Upgradeable for IERC20Upgradeable;
@@ -18,13 +20,16 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     /***********************************|
     |             CONSTANTS             |
     |__________________________________*/
-    uint256 maximumPercentageRange = 1e8; // with 1e6 as base for percentage values this is 100%
+    /// @notice upper limit of percentage values
+    /// with 1e6 as base for percentage values 1e8 is 100%
+    uint256 maximumPercentageRange = 1e8;
 
     /***********************************|
     |           STATE VARIABLES         |
     |__________________________________*/
 
     /// @notice list of addresses that are allowed to access toMainnet and fromMainnet functions
+    /// modifiable by owner
     mapping(address => bool) allowedRebalancers;
 
     /// @notice percentage of token in 1e6 that should remain in the vault when transferring to mainnet.
@@ -32,34 +37,46 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     /// e.g.: if the threshold is 10% and the vault’s TVL is 1M USDC,
     /// then 900k USDC will be transferred to the mainnet iToken vaul
     /// and 100k USDC will sit idle here for instant withdrawals for users.
+    /// modifiable by owner
     uint256 minimumThresholdPercentage;
 
     /// @notice address that receives the withdrawal fee
+    /// modifiable by owner
     address withdrawalFeeReceiver;
 
     /// @notice withdrawal fee is either amount in percentage or absolute minimum. This var defines the percentage in 1e6
     /// this number is given in 1e6, i.e. 1% would equal 1_000_000, 10% would be 10_000_000 etc.
+    /// modifiable by owner
     uint256 withdrawalFeePercentage;
     /// @notice withdrawal fee is either amount in percentage or absolute minimum. This var defines the absolute minimum
     /// this number is given in decimals for the respective asset of the vault.
+    /// modifiable by owner
     uint256 withdrawalFeeAbsoluteMin;
 
+    /// @notice bridge address to which funds will be transferred to when calling toMainnet
+    /// modifiable by owner
+    address bridgeAddress;
+
     /// @notice exchange price in asset.decimals
+    /// modifiable by rebalancers
     uint256 mainnetExchangePrice;
 
     /// @notice total (original) raw amount of assets currently committed to invest via bridge
+    /// updated in fromMainnet and toMainnet
     uint256 internal investedAssets;
 
     /***********************************|
     |               EVENTS              |
     |__________________________________*/
 
+    /// @notice emitted whenever a user withdraws assets and a fee for withdrawalFeeReceiver is collected
     event WithdrawalFeeCollected(address indexed receiver, uint256 indexed fee);
 
     /***********************************|
     |              MODIFIERS            |
     |__________________________________*/
 
+    /// @notice checks if an address is not 0x000...
     modifier validAddress(address _address) {
         if (_address == address(0)) {
             revert LiteVault__InvalidParams();
@@ -67,6 +84,7 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         _;
     }
 
+    /// @notice checks if a percentage value is within the maximumPercentageRange
     modifier validPercentage(uint256 percentage) {
         if (percentage > maximumPercentageRange) {
             revert LiteVault__InvalidParams();
@@ -74,6 +92,7 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         _;
     }
 
+    /// @notice checks if msg.sender is an allowed rebalancer
     modifier onlyAllowedRebalancer() {
         if (!allowedRebalancers[msg.sender]) {
             revert LiteVault__Unauthorized();
@@ -85,6 +104,9 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     |    CONSTRUCTOR / INITIALIZERS     |
     |__________________________________*/
 
+    /// @notice initializes the contract with owner_ for Ownable and asset_ for the ERC4626 vault
+    /// @param owner_ the Ownable address for this contract
+    /// @param asset_ the ERC20 asset for the ERC4626 vault
     function initialize(address owner_, IERC20Upgradeable asset_)
         public
         initializer
@@ -100,14 +122,12 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     |           PUBLIC API              |
     |__________________________________*/
 
-    function isAllowedRebalancer(address rebalancer) external returns (bool) {
-        return allowedRebalancers[rebalancer];
-    }
-
-    function minimumThresholdAmount() external returns (uint256) {
+    /// @notice calculates the minimum threshold amount of asset that must stay in the contract
+    /// @return minimumThresholdAmount
+    function minimumThresholdAmount() public view returns (uint256) {
         return
             _getPercentageAmount(
-                totalPrincipal,
+                investedAssets,
                 minimumThresholdPercentage,
                 Math.Rounding.Up
             );
@@ -115,11 +135,14 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
 
     /** @dev See {IERC4626-totalAssets}. */
     function totalAssets() public view override returns (uint256) {
-        return _asset.balanceOf(address(this)) + totalInvestedAssets();
+        return
+            IERC20Upgradeable(asset()).balanceOf(address(this)) + // assets in contract (idle)
+            totalInvestedAssets(); // plus assets invested through bridge (active)
     }
 
-    /// @notice amount of invested assets adjusted for exchangePrice
-    function totalInvestedAssets() public view override returns (uint256) {
+    /// @notice calculates the total invested assets
+    /// @return amount of invested assets adjusted for exchangePrice
+    function totalInvestedAssets() public view returns (uint256) {
         // e.g. with an exchange price where the bridged assets are worth double by now
         // (because asset on bridge has appreciated in value through yield over time)
         // 100 * 200 / 1e2 = 20_000 / 100 = 200; (assuming decimals is 1e2 for simplicity)
@@ -136,8 +159,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         uint256 assets,
         address receiver,
         address owner_
-    ) public virtual override returns (uint256) {
-        // Logic below adapted from OpenZeppelin ERC4626Upgradeable, added logic for fee
+    ) public override returns (uint256) {
+        // Logic below adapted from OpenZeppelin ERC4626Upgradeable: added logic for fee
         require(
             assets <= maxWithdraw(owner_),
             "ERC4626: withdraw more than max"
@@ -156,8 +179,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         uint256 shares,
         address receiver,
         address owner_
-    ) public virtual override returns (uint256) {
-        // Logic below adapted from OpenZeppelin ERC4626Upgradeable, added logic for fee
+    ) public override returns (uint256) {
+        // Logic below adapted from OpenZeppelin ERC4626Upgradeable: added logic for fee
         require(shares <= maxRedeem(owner_), "ERC4626: redeem more than max");
 
         uint256 assets = previewRedeem(shares);
@@ -168,72 +191,65 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         return assetsAfterFee;
     }
 
+    /// @notice checks if a certain address is an allowed rebalancer
+    /// @param rebalancer address to check
+    /// @return flag true or false if allowed
+    function isAllowedRebalancer(address rebalancer)
+        external
+        view
+        returns (bool)
+    {
+        return allowedRebalancers[rebalancer];
+    }
+
     /***********************************|
     |          REBALANCER ONLY          |
     |__________________________________*/
 
-    // deposit:
-    // Create a simple iToken vault on Polygon where the user will deposit token
-    // and get iToken in return (iToken = token/exchangePrice).
-
+    /// @notice moves amountToMove assets to the bridgeAddress
+    /// @param amountToMove (raw) amount of assets to transfer to bridge
     function toMainnet(uint256 amountToMove) external onlyAllowedRebalancer {
-        // Moving tokens to mainnet. At the time of moving, we need to store the raw token amount
-        // that we are moving so we can calculate the overall income anytime.
-        // `raw_token_amount = token_amount / mainnet_vault_exchange_price`
-
         // amount of principal left must cover at least minimumThresholdAmount
-        uint256 principalLeft = totalPrincipal - amountToMove;
+        uint256 principalLeft = investedAssets - amountToMove;
         if (principalLeft < minimumThresholdAmount()) {
             revert LiteVault__MinimumThreshold();
         }
 
-        // approve amount to rebalancer
-        IERC20Upgradeable(asset).safeIncreaseAllowance(
-            msg.sender,
-            amountToMove
-        );
+        // send amountToMove to bridge
+        IERC20Upgradeable(asset()).safeTransfer(bridgeAddress, amountToMove);
 
         // update the amount of bridged principal (raw amount)
-        investedAssets += amountToMove;
-
-        // the following would calculate the actual value of the amountToMove after bridging...
-        // this is however not needed here?
+        // bridgedAmount = amountToMove / mainnetExchangePrice
         // e.g. with an exchange price where asset is only worth half after moving to mainnet
         // (because asset on bridge has appreciated in value through yield over time)
         // 100 * 1e2 / 200 = 10_000 / 200 = 50;  (assuming decimals is 1e2 for simplicity)
-        // uint256 bridgedAmount = amountToMove.mulDiv(
-        //     decimals(),
-        //     mainnetExchangePrice,
-        //     Math.Rounding.Down
-        // );
+        investedAssets += amountToMove.mulDiv(
+            decimals(),
+            mainnetExchangePrice,
+            Math.Rounding.Down
+        );
     }
 
-    function fromMainnet(uint256 amountToMove) external onlyAllowedRebalancer {
-        // Getting tokens back from mainnet. Deposit the tokens in the Polygon vault and
-        // subtract the amount_raw according to `token_amount / mainnet_vault_exchange_price.`
-
+    /// @notice moves bridgedAmount from bridge to this contract
+    /// @param bridgedAmount amount of assets to transfer from bridge
+    /// @dev the bridge (rebalancer) would calculate bridgedAmount by amountToMove * mainnetExchangePrice
+    /// e.g. with an exchange price where asset is worth double after moving from mainnet
+    /// (because asset on bridge has appreciated in value through yield over time)
+    /// 100 * 200 / 1e2 = 20_000 / 100 = 200; (assuming decimals is 1e2 for simplicity)
+    function fromMainnet(uint256 bridgedAmount) external onlyAllowedRebalancer {
         // transferFrom rebalancer
-        IERC20Upgradeable(asset).safeTransferFrom(
+        IERC20Upgradeable(asset()).safeTransferFrom(
             msg.sender,
             address(this),
-            amountToMove
+            bridgedAmount
         );
 
         // update the amount of bridged principal (raw amount)
-        investedAssets -= amountToMove;
-
-        // The following has to be done on bridge (rebalancer) and the result bridgedAmount
-        // would be the expected amount in this function "amountToMove"
-        // e.g. with an exchange price where asset is worth double after moving from mainnet
-        // (because asset on bridge has appreciated in value through yield over time)
-        // 100 * 200 / 1e2 = 20_000 / 100 = 200; (assuming decimals is 1e2 for simplicity)
-        // uint256 bridgedAmount = amountToMove.mulDiv(
-        //     mainnetExchangePrice,
-        //     decimals(),
-        //     Math.Rounding.Down
-        // );
+        investedAssets -= bridgedAmount;
     }
 
+    /// @notice rebalancer can set the mainnetExchangePrice
+    /// @param _mainnetExchangePrice the new mainnetExchangePrice
     function updateMainnetExchangePrice(uint256 _mainnetExchangePrice)
         external
         onlyAllowedRebalancer
@@ -245,6 +261,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     |             OWNER ONLY            |
     |__________________________________*/
 
+    /// @notice owner can set the minimumThresholdPercentage
+    /// @param _minimumThresholdPercentage the new minimumThresholdPercentage
     function setMinimumThresholdPercentage(uint256 _minimumThresholdPercentage)
         external
         onlyOwner
@@ -253,6 +271,9 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         minimumThresholdPercentage = _minimumThresholdPercentage;
     }
 
+    /// @notice owner can add or remove allowed rebalancers
+    /// @param rebalancer the address for the rebalancer to set the flag for
+    /// @param allowed flag for if rebalancer is allowed or not
     function setRebalancer(address rebalancer, bool allowed)
         external
         onlyOwner
@@ -260,6 +281,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         allowedRebalancers[rebalancer] = allowed;
     }
 
+    /// @notice owner can set the withdrawalFeeAbsoluteMin
+    /// @param _withdrawalFeeAbsoluteMin the new withdrawalFeeAbsoluteMin
     function setWithdrawalFeeAbsoluteMin(uint256 _withdrawalFeeAbsoluteMin)
         external
         onlyOwner
@@ -267,6 +290,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         withdrawalFeeAbsoluteMin = _withdrawalFeeAbsoluteMin;
     }
 
+    /// @notice owner can set the withdrawalFeePercentage
+    /// @param _withdrawalFeePercentage the new withdrawalFeePercentage
     function setWithdrawalFeePercentage(uint256 _withdrawalFeePercentage)
         external
         onlyOwner
@@ -275,19 +300,38 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         withdrawalFeePercentage = _withdrawalFeePercentage;
     }
 
-    function setWithdrawalFeeReceiver(address _withdrawalFeeAddress)
+    /// @notice owner can set the withdrawalFeeReceiver
+    /// @param _withdrawalFeeReceiver the new withdrawalFeeReceiver
+    function setWithdrawalFeeReceiver(address _withdrawalFeeReceiver)
         external
         onlyOwner
-        validAddress(_withdrawalFeeAddress)
+        validAddress(_withdrawalFeeReceiver)
     {
-        withdrawalFeeAddress = _withdrawalFeeAddress;
+        withdrawalFeeReceiver = _withdrawalFeeReceiver;
+    }
+
+    /// @notice owner can set the bridgeAddress
+    /// @param _bridgeAddress the new bridgeAddress
+    function setBridgeAddress(address _bridgeAddress)
+        external
+        onlyOwner
+        validAddress(_bridgeAddress)
+    {
+        bridgeAddress = _bridgeAddress;
     }
 
     /***********************************|
     |              INTERNAL             |
     |__________________________________*/
 
-    function _getWithdrawalFee(uint256 withdrawAmount) returns (uint256) {
+    /// @dev calculates the withdrawal fee: max between the percentage amount or the absolute amount
+    /// @param withdrawAmount the amount being withdrawn
+    /// @return the withdrawal fee amount
+    function _getWithdrawalFee(uint256 withdrawAmount)
+        internal
+        view
+        returns (uint256)
+    {
         uint256 withdrawalFee = _getPercentageAmount(
             withdrawAmount,
             withdrawalFeePercentage,
@@ -297,11 +341,16 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         return Math.max(withdrawalFee, withdrawalFeeAbsoluteMin);
     }
 
+    /// @dev calculates a percentage amount of a number based on the 1e6 decimals expected
+    /// @param amount the amount to calculate the percentage on
+    /// @param percentage the desired percentage in 1e6
+    /// @param rounding the rounding flag from Openzeppelin Math library, either Up or Down
+    /// @return the percentage amount
     function _getPercentageAmount(
         uint256 amount,
         uint256 percentage,
         Math.Rounding rounding
-    ) {
+    ) internal pure returns (uint256) {
         return
             amount.mulDiv(
                 percentage,
@@ -310,18 +359,23 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
             );
     }
 
-    function _collectWithdrawalFee(uint256 assets, address owner_)
+    /// @dev collects the withdrawal fee on assetsAmount and emits WithdrawalFeeCollected
+    /// @param assetsAmount the amount of assets being withdrawn
+    /// @param owner_ the owner of the assets
+    /// @return the withdrawal assetsAmount amount AFTER deducting the fee
+    function _collectWithdrawalFee(uint256 assetsAmount, address owner_)
+        internal
         returns (uint256)
     {
-        uint256 withdrawalFee = _getWithdrawalFee(assets);
+        uint256 withdrawalFee = _getWithdrawalFee(assetsAmount);
 
-        IERC20Upgradeable(asset).safeTransfer(
+        IERC20Upgradeable(asset()).safeTransfer(
             withdrawalFeeReceiver,
             withdrawalFee
         );
 
         emit WithdrawalFeeCollected(owner_, withdrawalFee);
 
-        return assets - withdrawalFee;
+        return assetsAmount - withdrawalFee;
     }
 }
