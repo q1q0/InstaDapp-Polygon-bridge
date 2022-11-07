@@ -133,6 +133,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
             );
     }
 
+    /// @notice returns the total amount of assets managed by the vault, combining idle + active (bridged)
+    /// @return amount of assets managed by vault
     /** @dev See {IERC4626-totalAssets}. */
     function totalAssets() public view override returns (uint256) {
         return
@@ -140,12 +142,12 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
             totalInvestedAssets(); // plus assets invested through bridge (active)
     }
 
-    /// @notice calculates the total invested assets
-    /// @return amount of invested assets adjusted for exchangePrice
+    /// @notice calculates the total invested assets that are bridged
+    /// @return amount of invested assets (currently bridged) adjusted for exchangePrice
     function totalInvestedAssets() public view returns (uint256) {
-        // e.g. with an exchange price where the bridged assets are worth double by now
+        // e.g. with mainnetExchangePrice is 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
         // (because asset on bridge has appreciated in value through yield over time)
-        // 100 * 200 / 1e2 = 20_000 / 100 = 200; (assuming decimals is 1e2 for simplicity)
+        // 100 * 2 = 200;
         return
             investedAssets.mulDiv(
                 mainnetExchangePrice,
@@ -220,9 +222,9 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
 
         // update the amount of bridged principal (raw amount)
         // bridgedAmount = amountToMove / mainnetExchangePrice
-        // e.g. with an exchange price where asset is only worth half after moving to mainnet
+        // e.g. with an mainnetExchangePrice 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
         // (because asset on bridge has appreciated in value through yield over time)
-        // 100 * 1e2 / 200 = 10_000 / 200 = 50;  (assuming decimals is 1e2 for simplicity)
+        // 100 / 2 = 50;
         investedAssets += amountToMove.mulDiv(
             decimals(),
             mainnetExchangePrice,
@@ -230,22 +232,26 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         );
     }
 
-    /// @notice moves bridgedAmount from bridge to this contract
-    /// @param bridgedAmount amount of assets to transfer from bridge
-    /// @dev the bridge (rebalancer) would calculate bridgedAmount by amountToMove * mainnetExchangePrice
-    /// e.g. with an exchange price where asset is worth double after moving from mainnet
-    /// (because asset on bridge has appreciated in value through yield over time)
-    /// 100 * 200 / 1e2 = 20_000 / 100 = 200; (assuming decimals is 1e2 for simplicity)
-    function fromMainnet(uint256 bridgedAmount) external onlyAllowedRebalancer {
+    /// @notice moves amountToMove from bridge to this contract
+    /// @param amountToMove (raw) amount of assets to transfer from bridge
+    function fromMainnet(uint256 amountToMove) external onlyAllowedRebalancer {
         // transferFrom rebalancer
         IERC20Upgradeable(asset()).safeTransferFrom(
             msg.sender,
             address(this),
-            bridgedAmount
+            amountToMove
         );
 
         // update the amount of bridged principal (raw amount)
-        investedAssets -= bridgedAmount;
+        // bridgedAmount = amountToMove / mainnetExchangePrice
+        // e.g. with an mainnetExchangePrice 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
+        // (because asset on bridge has appreciated in value through yield over time)
+        // 100 / 2 = 50;
+        investedAssets -= amountToMove.mulDiv(
+            decimals(),
+            mainnetExchangePrice,
+            Math.Rounding.Down
+        );
     }
 
     /// @notice rebalancer can set the mainnetExchangePrice
