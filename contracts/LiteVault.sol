@@ -108,15 +108,27 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     /// @notice initializes the contract with owner_ for Ownable and asset_ for the ERC4626 vault
     /// @param owner_ the Ownable address for this contract
     /// @param asset_ the ERC20 asset for the ERC4626 vault
-    function initialize(address owner_, IERC20Upgradeable asset_)
-        public
-        initializer
-        validAddress(owner_)
-    {
+    function initialize(
+        address owner_,
+        IERC20Upgradeable asset_,
+        uint256 _minimumThresholdPercentage,
+        address _withdrawalFeeReceiver,
+        uint256 _withdrawalFeePercentage,
+        uint256 _withdrawalFeeAbsoluteMin,
+        address _bridgeAddress,
+        uint256 _mainnetExchangePrice
+    ) public initializer validAddress(owner_) {
         __Ownable_init();
         transferOwnership(owner_);
 
         __ERC4626_init(asset_);
+
+        minimumThresholdPercentage = _minimumThresholdPercentage;
+        withdrawalFeeReceiver = _withdrawalFeeReceiver;
+        withdrawalFeePercentage = _withdrawalFeePercentage;
+        withdrawalFeeAbsoluteMin = _withdrawalFeeAbsoluteMin;
+        bridgeAddress = _bridgeAddress;
+        mainnetExchangePrice = _mainnetExchangePrice;
     }
 
     /***********************************|
