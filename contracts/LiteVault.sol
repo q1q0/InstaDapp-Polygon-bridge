@@ -145,8 +145,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     /// @param sharesAmount the amount of shares being withdrawn
     /// @return the withdrawal fee amount in assets (not shares!)
     function getRedeemFee(uint256 sharesAmount) public view returns (uint256) {
-        uint256 shares = convertToAssets(sharesAmount);
-        return getWithdrawalFee(shares);
+        uint256 assetsAmount = previewRedeem(sharesAmount);
+        return getWithdrawalFee(assetsAmount);
     }
 
     /// @notice calculates the withdrawal fee: max between the percentage amount or the absolute amount

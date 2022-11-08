@@ -75,7 +75,7 @@ contract ExcessWithdrawHandler {
     /// @param assets amount of assets to withdraw (inclusive of fee)
     /// @param receiver the receiver of the assets
     function queueExcessWithdraw(uint256 assets, address receiver) external {
-        uint256 shares = vault.convertToShares(assets);
+        uint256 shares = vault.previewWithdraw(assets);
         _handleExcessWithdrawal(shares, assets, receiver);
     }
 
@@ -83,7 +83,7 @@ contract ExcessWithdrawHandler {
     /// @param shares amount of shares to redeem (inclusive of fee)
     /// @param receiver the receiver of the assets
     function queueExcessRedeem(uint256 shares, address receiver) external {
-        uint256 assets = vault.convertToAssets(shares);
+        uint256 assets = vault.previewRedeem(shares);
         _handleExcessWithdrawal(shares, assets, receiver);
     }
 
@@ -97,7 +97,7 @@ contract ExcessWithdrawHandler {
         }
 
         // update state
-        uint256 assets = vault.convertToAssets(shares);
+        uint256 assets = vault.previewRedeem(shares);
         queuedAmount -= assets;
         lockedShares[receiver] -= shares;
 
