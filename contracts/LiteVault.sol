@@ -20,6 +20,7 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     /***********************************|
     |             CONSTANTS             |
     |__________________________________*/
+
     /// @notice upper limit of percentage values
     /// with 1e6 as base for percentage values 1e8 is 100%
     uint256 maximumPercentageRange = 1e8;
@@ -121,6 +122,31 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     /***********************************|
     |           PUBLIC API              |
     |__________________________________*/
+
+    /// @notice calculates the withdrawal fee: max between the percentage amount or the absolute amount
+    /// @param sharesAmount the amount of shares being withdrawn
+    /// @return the withdrawal fee amount in assets (not shares!)
+    function getRedeemFee(uint256 sharesAmount) public view returns (uint256) {
+        uint256 shares = convertToAssets(sharesAmount);
+        return getWithdrawalFee(shares);
+    }
+
+    /// @notice calculates the withdrawal fee: max between the percentage amount or the absolute amount
+    /// @param assetsAmount the amount of assets being withdrawn
+    /// @return the withdrawal fee amount in assets
+    function getWithdrawalFee(uint256 assetsAmount)
+        public
+        view
+        returns (uint256)
+    {
+        uint256 withdrawalFee = _getPercentageAmount(
+            assetsAmount,
+            withdrawalFeePercentage,
+            Math.Rounding.Up
+        );
+
+        return Math.max(withdrawalFee, withdrawalFeeAbsoluteMin);
+    }
 
     /// @notice calculates the minimum threshold amount of asset that must stay in the contract
     /// @return minimumThresholdAmount
@@ -330,23 +356,6 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     |              INTERNAL             |
     |__________________________________*/
 
-    /// @dev calculates the withdrawal fee: max between the percentage amount or the absolute amount
-    /// @param withdrawAmount the amount being withdrawn
-    /// @return the withdrawal fee amount
-    function _getWithdrawalFee(uint256 withdrawAmount)
-        internal
-        view
-        returns (uint256)
-    {
-        uint256 withdrawalFee = _getPercentageAmount(
-            withdrawAmount,
-            withdrawalFeePercentage,
-            Math.Rounding.Up
-        );
-
-        return Math.max(withdrawalFee, withdrawalFeeAbsoluteMin);
-    }
-
     /// @dev calculates a percentage amount of a number based on the 1e6 decimals expected
     /// @param amount the amount to calculate the percentage on
     /// @param percentage the desired percentage in 1e6
@@ -373,7 +382,7 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         internal
         returns (uint256)
     {
-        uint256 withdrawalFee = _getWithdrawalFee(assetsAmount);
+        uint256 withdrawalFee = getWithdrawalFee(assetsAmount);
 
         IERC20Upgradeable(asset()).safeTransfer(
             withdrawalFeeReceiver,
