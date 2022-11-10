@@ -37,22 +37,22 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     /// this number is given in 1e6, i.e. 1% would equal 1_000_000, 10% would be 10_000_000 etc.
     /// e.g.: if the threshold is 10% and the vault’s TVL is 1M USDC,
     /// then 900k USDC will be transferred to the mainnet iToken vaul
-    /// and 100k USDC will sit idle here for instant withdrawals for users.
+    /// and 100k USDC will sit idle here for instant withdraws for users.
     /// modifiable by owner
     uint256 public minimumThresholdPercentage;
 
-    /// @notice address that receives the withdrawal fee
+    /// @notice address that receives the withdraw fee
     /// modifiable by owner
-    address public withdrawalFeeReceiver;
+    address public withdrawFeeReceiver;
 
-    /// @notice withdrawal fee is either amount in percentage or absolute minimum. This var defines the percentage in 1e6
+    /// @notice withdraw fee is either amount in percentage or absolute minimum. This var defines the percentage in 1e6
     /// this number is given in 1e6, i.e. 1% would equal 1_000_000, 10% would be 10_000_000 etc.
     /// modifiable by owner
-    uint256 public withdrawalFeePercentage;
-    /// @notice withdrawal fee is either amount in percentage or absolute minimum. This var defines the absolute minimum
+    uint256 public withdrawFeePercentage;
+    /// @notice withdraw fee is either amount in percentage or absolute minimum. This var defines the absolute minimum
     /// this number is given in decimals for the respective asset of the vault.
     /// modifiable by owner
-    uint256 public withdrawalFeeAbsoluteMin;
+    uint256 public withdrawFeeAbsoluteMin;
 
     /// @notice bridge address to which funds will be transferred to when calling toMainnet
     /// modifiable by owner
@@ -70,8 +70,17 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     |               EVENTS              |
     |__________________________________*/
 
-    /// @notice emitted whenever a user withdraws assets and a fee for withdrawalFeeReceiver is collected
-    event WithdrawalFeeCollected(address indexed receiver, uint256 indexed fee);
+    /// @notice emitted whenever a user withdraws assets and a fee for withdrawFeeReceiver is collected
+    event WithdrawFeeCollected(address indexed receiver, uint256 indexed fee);
+
+    /// @notice emitted whenever fromMainnet is executed
+    event FromMainnet(
+        address indexed bridgeAddress,
+        uint256 indexed amountMoved
+    );
+
+    /// @notice emitted whenever toMainnet is executed
+    event ToMainnet(address indexed bridgeAddress, uint256 indexed amountMoved);
 
     /***********************************|
     |              MODIFIERS            |
@@ -109,18 +118,18 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     /// @param owner_ the Ownable address for this contract
     /// @param asset_ the ERC20 asset for the ERC4626 vault
     /// @param _minimumThresholdPercentage initial minimumThresholdPercentage
-    /// @param _withdrawalFeeReceiver initial withdrawalFeeReceiver
-    /// @param _withdrawalFeePercentage initial withdrawalFeePercentage
-    /// @param _withdrawalFeeAbsoluteMin initial withdrawalFeeAbsoluteMin
+    /// @param _withdrawFeeReceiver initial withdrawFeeReceiver
+    /// @param _withdrawFeePercentage initial withdrawFeePercentage
+    /// @param _withdrawFeeAbsoluteMin initial withdrawFeeAbsoluteMin
     /// @param _bridgeAddress initial bridgeAddress
     /// @param _mainnetExchangePrice initial mainnetExchangePrice
     function initialize(
         address owner_,
         IERC20Upgradeable asset_,
         uint256 _minimumThresholdPercentage,
-        address _withdrawalFeeReceiver,
-        uint256 _withdrawalFeePercentage,
-        uint256 _withdrawalFeeAbsoluteMin,
+        address _withdrawFeeReceiver,
+        uint256 _withdrawFeePercentage,
+        uint256 _withdrawFeeAbsoluteMin,
         address _bridgeAddress,
         uint256 _mainnetExchangePrice
     ) public initializer validAddress(owner_) {
@@ -130,9 +139,9 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         __ERC4626_init(asset_);
 
         minimumThresholdPercentage = _minimumThresholdPercentage;
-        withdrawalFeeReceiver = _withdrawalFeeReceiver;
-        withdrawalFeePercentage = _withdrawalFeePercentage;
-        withdrawalFeeAbsoluteMin = _withdrawalFeeAbsoluteMin;
+        withdrawFeeReceiver = _withdrawFeeReceiver;
+        withdrawFeePercentage = _withdrawFeePercentage;
+        withdrawFeeAbsoluteMin = _withdrawFeeAbsoluteMin;
         bridgeAddress = _bridgeAddress;
         mainnetExchangePrice = _mainnetExchangePrice;
     }
@@ -141,29 +150,29 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     |           PUBLIC API              |
     |__________________________________*/
 
-    /// @notice calculates the withdrawal fee: max between the percentage amount or the absolute amount
+    /// @notice calculates the withdraw fee: max between the percentage amount or the absolute amount
     /// @param sharesAmount the amount of shares being withdrawn
-    /// @return the withdrawal fee amount in assets (not shares!)
+    /// @return the withdraw fee amount in assets (not shares!)
     function getRedeemFee(uint256 sharesAmount) public view returns (uint256) {
         uint256 assetsAmount = previewRedeem(sharesAmount);
-        return getWithdrawalFee(assetsAmount);
+        return getWithdrawFee(assetsAmount);
     }
 
-    /// @notice calculates the withdrawal fee: max between the percentage amount or the absolute amount
+    /// @notice calculates the withdraw fee: max between the percentage amount or the absolute amount
     /// @param assetsAmount the amount of assets being withdrawn
-    /// @return the withdrawal fee amount in assets
-    function getWithdrawalFee(uint256 assetsAmount)
+    /// @return the withdraw fee amount in assets
+    function getWithdrawFee(uint256 assetsAmount)
         public
         view
         returns (uint256)
     {
-        uint256 withdrawalFee = _getPercentageAmount(
+        uint256 withdrawFee = _getPercentageAmount(
             assetsAmount,
-            withdrawalFeePercentage,
+            withdrawFeePercentage,
             Math.Rounding.Up
         );
 
-        return Math.max(withdrawalFee, withdrawalFeeAbsoluteMin);
+        return Math.max(withdrawFee, withdrawFeeAbsoluteMin);
     }
 
     /// @notice calculates the minimum threshold amount of asset that must stay in the contract
@@ -214,7 +223,7 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
 
         // burn full shares but only withdraw assetsAfterFee
         uint256 shares = previewWithdraw(assets);
-        uint256 assetsAfterFee = _collectWithdrawalFee(assets, owner_);
+        uint256 assetsAfterFee = _collectWithdrawFee(assets, owner_);
         _withdraw(_msgSender(), receiver, owner_, assetsAfterFee, shares);
 
         return shares;
@@ -231,7 +240,7 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
 
         uint256 assets = previewRedeem(shares);
         // burn full shares but only withdraw assetsAfterFee
-        uint256 assetsAfterFee = _collectWithdrawalFee(assets, owner_);
+        uint256 assetsAfterFee = _collectWithdrawFee(assets, owner_);
         _withdraw(_msgSender(), receiver, owner_, assetsAfterFee, shares);
 
         return assetsAfterFee;
@@ -274,6 +283,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
             mainnetExchangePrice,
             Math.Rounding.Down
         );
+
+        emit ToMainnet(bridgeAddress, amountToMove);
     }
 
     /// @notice moves amountToMove from bridge to this contract
@@ -281,7 +292,7 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     function fromMainnet(uint256 amountToMove) external onlyAllowedRebalancer {
         // transferFrom rebalancer
         IERC20Upgradeable(asset()).safeTransferFrom(
-            msg.sender,
+            bridgeAddress,
             address(this),
             amountToMove
         );
@@ -296,6 +307,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
             mainnetExchangePrice,
             Math.Rounding.Down
         );
+
+        emit FromMainnet(bridgeAddress, amountToMove);
     }
 
     /// @notice rebalancer can set the mainnetExchangePrice
@@ -331,33 +344,33 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
         allowedRebalancers[rebalancer] = allowed;
     }
 
-    /// @notice owner can set the withdrawalFeeAbsoluteMin
-    /// @param _withdrawalFeeAbsoluteMin the new withdrawalFeeAbsoluteMin
-    function setWithdrawalFeeAbsoluteMin(uint256 _withdrawalFeeAbsoluteMin)
+    /// @notice owner can set the withdrawFeeAbsoluteMin
+    /// @param _withdrawFeeAbsoluteMin the new withdrawFeeAbsoluteMin
+    function setWithdrawFeeAbsoluteMin(uint256 _withdrawFeeAbsoluteMin)
         external
         onlyOwner
     {
-        withdrawalFeeAbsoluteMin = _withdrawalFeeAbsoluteMin;
+        withdrawFeeAbsoluteMin = _withdrawFeeAbsoluteMin;
     }
 
-    /// @notice owner can set the withdrawalFeePercentage
-    /// @param _withdrawalFeePercentage the new withdrawalFeePercentage
-    function setWithdrawalFeePercentage(uint256 _withdrawalFeePercentage)
+    /// @notice owner can set the withdrawFeePercentage
+    /// @param _withdrawFeePercentage the new withdrawFeePercentage
+    function setWithdrawFeePercentage(uint256 _withdrawFeePercentage)
         external
         onlyOwner
-        validPercentage(_withdrawalFeePercentage)
+        validPercentage(_withdrawFeePercentage)
     {
-        withdrawalFeePercentage = _withdrawalFeePercentage;
+        withdrawFeePercentage = _withdrawFeePercentage;
     }
 
-    /// @notice owner can set the withdrawalFeeReceiver
-    /// @param _withdrawalFeeReceiver the new withdrawalFeeReceiver
-    function setWithdrawalFeeReceiver(address _withdrawalFeeReceiver)
+    /// @notice owner can set the withdrawFeeReceiver
+    /// @param _withdrawFeeReceiver the new withdrawFeeReceiver
+    function setWithdrawFeeReceiver(address _withdrawFeeReceiver)
         external
         onlyOwner
-        validAddress(_withdrawalFeeReceiver)
+        validAddress(_withdrawFeeReceiver)
     {
-        withdrawalFeeReceiver = _withdrawalFeeReceiver;
+        withdrawFeeReceiver = _withdrawFeeReceiver;
     }
 
     /// @notice owner can set the bridgeAddress
@@ -392,23 +405,23 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
             );
     }
 
-    /// @dev collects the withdrawal fee on assetsAmount and emits WithdrawalFeeCollected
+    /// @dev collects the withdraw fee on assetsAmount and emits WithdrawFeeCollected
     /// @param assetsAmount the amount of assets being withdrawn
     /// @param owner_ the owner of the assets
-    /// @return the withdrawal assetsAmount amount AFTER deducting the fee
-    function _collectWithdrawalFee(uint256 assetsAmount, address owner_)
+    /// @return the withdraw assetsAmount amount AFTER deducting the fee
+    function _collectWithdrawFee(uint256 assetsAmount, address owner_)
         internal
         returns (uint256)
     {
-        uint256 withdrawalFee = getWithdrawalFee(assetsAmount);
+        uint256 withdrawFee = getWithdrawFee(assetsAmount);
 
         IERC20Upgradeable(asset()).safeTransfer(
-            withdrawalFeeReceiver,
-            withdrawalFee
+            withdrawFeeReceiver,
+            withdrawFee
         );
 
-        emit WithdrawalFeeCollected(owner_, withdrawalFee);
+        emit WithdrawFeeCollected(owner_, withdrawFee);
 
-        return assetsAmount - withdrawalFee;
+        return assetsAmount - withdrawFee;
     }
 }
