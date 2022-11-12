@@ -12,4 +12,11 @@ abstract contract Modifiers is Variables {
         }
         _;
     }
+
+    modifier isGtePenaltyFee(uint32 _maxPenaltyFeePercentage) {
+        if (_maxPenaltyFeePercentage < penaltyFeePercentage) {
+            revert ExcessWithdrawHandler__InvalidParams();
+        }
+        _;
+    }
 }

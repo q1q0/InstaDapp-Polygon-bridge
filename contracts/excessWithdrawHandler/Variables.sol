@@ -3,39 +3,29 @@ pragma solidity >=0.8.17;
 import {ILiteVault} from "../vault/Interfaces.sol";
 
 contract Variables {
-    struct ExcessWithdraw {
-        // fee to cover any cost for e.g. unwinding, slippages, deleveraging etc. on mainnet
-        // set and updated by bot according to observations, as an absolute amount
-        uint256 penaltyFee;
-        // amount of locked vault tokens (shares) until withdraw is executed
-        uint256 shares;
-        // maximum penaltyFee for the withdraw as set by user as an absolute amount
-        uint256 maxPenaltyFee;
-        // receiver of the tokens at execute withdraw time
-        address receiver;
-    }
-
     /***********************************|
     |           STATE VARIABLES         |
     |__________________________________*/
 
-    /// @notice the LiteVault that this ExcessWithdrawHandler interacts with
-    ILiteVault public immutable vault;
+    /// @dev tightly pack uint32 (4 bytes) and address (20 bytes) into one storage slot
 
-    /// @notice the total amount of assets (raw) that is currently queued for excess withdraw
+    /// @notice the current penaltyFeePercentage applied to any withdraw amount request
+    /// this fee is to cover any cost for e.g. unwinding, slippages, deleveraging etc. on mainnet
+    /// set and updated by bot (allowedFeeSetter) according to observations, as an absolute amount
+    uint32 penaltyFeePercentage; // 4 bytes
+
+    /// @notice the LiteVault that this ExcessWithdrawHandler interacts with
+    ILiteVault public immutable vault; // 20 bytes
+
+    /// @notice queued withdraw amounts per receiver, the penaltyFee already subtracted
+    mapping(address => uint256) queuedWithdrawAmounts;
+
+    /// @notice the total amount of assets (raw) that is currently queued for excess withdraw, already subtracted the penaltyFee.
     /// @dev useful for the off-chain bot to keep the vault balance high enough
     /// balance in vault should be ExcessWithdrawHandler.queuedAmount + LiteVault.minimumThreshold
-    /// This is inclusive of any withdraw fee
-    uint256 public queuedAmount;
+    uint256 public totalQueuedAmount;
 
-    /// @notice maps a user address to all the ids for excess withdraws this user has currently queued up
-    /// @dev all queued withdraw ids for a user can be fetched through this mapping and fed into the getter of excessWithdraws mapping
-    mapping(address => bytes32[]) public excessWithdrawIds;
-
-    /// @notice maps an excess withdraw id to the data struct for that ExcessWithdraw request
-    mapping(bytes32 => ExcessWithdraw) public excessWithdraws;
-
-    /// @notice list of addresses that are allowed to set the penalty fees for ExcessWithdraws
+    /// @notice list of addresses that are allowed to set the penalty fee
     /// modifiable by owner
     mapping(address => bool) public allowedFeeSetters;
 

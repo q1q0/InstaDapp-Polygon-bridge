@@ -23,7 +23,7 @@ abstract contract AdminActions is
 
     /// @notice owner can set the minimumThresholdPercentage
     /// @param _minimumThresholdPercentage the new minimumThresholdPercentage
-    function setMinimumThresholdPercentage(uint256 _minimumThresholdPercentage)
+    function setMinimumThresholdPercentage(uint32 _minimumThresholdPercentage)
         external
         onlyOwner
         validPercentage(_minimumThresholdPercentage)
@@ -52,7 +52,7 @@ abstract contract AdminActions is
 
     /// @notice owner can set the withdrawFeePercentage
     /// @param _withdrawFeePercentage the new withdrawFeePercentage
-    function setWithdrawFeePercentage(uint256 _withdrawFeePercentage)
+    function setWithdrawFeePercentage(uint32 _withdrawFeePercentage)
         external
         onlyOwner
         validPercentage(_withdrawFeePercentage)
@@ -101,8 +101,8 @@ contract LiteVault is AdminActions, Events {
     function initialize(
         address _owner,
         IERC20Upgradeable _asset,
-        uint256 _minimumThresholdPercentage,
-        uint256 _withdrawFeePercentage,
+        uint32 _minimumThresholdPercentage,
+        uint32 _withdrawFeePercentage,
         uint256 _withdrawFeeAbsoluteMin,
         address _bridgeAddress,
         uint256 _mainnetExchangePrice
