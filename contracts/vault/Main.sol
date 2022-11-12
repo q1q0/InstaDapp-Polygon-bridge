@@ -109,7 +109,7 @@ abstract contract RebalancerActions is ERC4626Upgradeable, Modifiers, Events {
             address(this)
         ) - _amountToMove;
         if (principalLeft < minimumThresholdAmount()) {
-            revert LiteVault__MinimumThreshold();
+            revert LiteVault__ExceedMinimumThreshold();
         }
 
         // send amountToMove to bridge

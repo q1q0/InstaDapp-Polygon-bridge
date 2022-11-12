@@ -35,7 +35,7 @@ describe("LiteVault", () => {
   let user1: SignerWithAddress;
   let user2: SignerWithAddress;
   let rebalancer: SignerWithAddress;
-  let bridgeAddress: string;
+  let bridge: SignerWithAddress;
 
   before(async () => {
     const signers = await ethers.getSigners();
@@ -43,7 +43,7 @@ describe("LiteVault", () => {
     user1 = signers[1];
     user2 = signers[2];
     rebalancer = signers[3];
-    bridgeAddress = signers[10].address;
+    bridge = signers[4];
 
     usdc = IERC20Upgradeable__factory.connect(usdcAddress, owner);
 
@@ -92,7 +92,7 @@ describe("LiteVault", () => {
         withdrawFeeReceiver(),
         withdrawFeePercentage,
         withdrawFeeAbsoluteMin,
-        bridgeAddress,
+        bridge.address,
         mainnetExchangePrice
       );
     };
@@ -114,7 +114,7 @@ describe("LiteVault", () => {
       expect(await vault.withdrawFeeAbsoluteMin()).to.eq(
         withdrawFeeAbsoluteMin
       );
-      expect(await vault.bridgeAddress()).to.eq(bridgeAddress);
+      expect(await vault.bridgeAddress()).to.eq(bridge.address);
       expect(await vault.mainnetExchangePrice()).to.eq(mainnetExchangePrice);
     });
   });
@@ -128,7 +128,7 @@ describe("LiteVault", () => {
         withdrawFeeReceiver(),
         withdrawFeePercentage,
         withdrawFeeAbsoluteMin,
-        bridgeAddress,
+        bridge.address,
         mainnetExchangePrice
       );
     });
@@ -469,6 +469,127 @@ describe("LiteVault", () => {
             });
           });
         });
+
+        describe("rebalancer actions", async () => {
+          describe("updateMainnetExchangePrice", async () => {
+            const subject = async (
+              value: BigNumber,
+              sender: SignerWithAddress
+            ) => {
+              return vault.connect(sender).updateMainnetExchangePrice(value);
+            };
+
+            it("should updateMainnetExchangePrice", async () => {
+              expect(
+                (await vault.mainnetExchangePrice()).eq(mainnetExchangePrice)
+              ).to.equal(true);
+
+              await subject(toUsdcBigNumber(5), rebalancer);
+
+              expect(
+                (await vault.mainnetExchangePrice()).eq(toUsdcBigNumber(5))
+              ).to.equal(true);
+            });
+
+            it("should revert if not rebalancer", async () => {
+              await expect(
+                subject(toUsdcBigNumber(5), user1)
+              ).to.be.revertedWith("LiteVault__Unauthorized");
+            });
+          });
+
+          describe("toMainnet", async () => {
+            const subject = async (
+              value: BigNumber,
+              sender: SignerWithAddress
+            ) => {
+              return vault.connect(sender).toMainnet(value);
+            };
+
+            it("should toMainnet", async () => {
+              // default deposit is 2000 so up to 1800 should be possible to move (minimumThreshold is 10%)
+              expect(await vault.totalInvestedAssets()).to.equal(0);
+
+              await subject(toUsdcBigNumber(1800), rebalancer);
+
+              expect(await vault.totalInvestedAssets()).to.equal(
+                toUsdcBigNumber(1800)
+              );
+            });
+
+            it("should emit ToMainnet", async () => {
+              const result = await subject(toUsdcBigNumber(1800), rebalancer);
+
+              const events = (await result.wait())?.events as Event[];
+              expect(events?.length).to.be.greaterThanOrEqual(1);
+              expect(events[events.length - 1].event).to.equal("ToMainnet");
+              expect(
+                events[events.length - 1]?.args?.amountMoved.eq(
+                  toUsdcBigNumber(1800)
+                )
+              ).to.equal(true);
+              expect(events[events.length - 1]?.args?.bridgeAddress).to.equal(
+                bridge.address
+              );
+            });
+
+            it("should revert if moving more than minimum threshold", async () => {
+              await expect(
+                subject(toUsdcBigNumber(1900), rebalancer)
+              ).to.be.revertedWith("LiteVault__ExceedMinimumThreshold");
+            });
+
+            it("should revert if not rebalancer", async () => {
+              await expect(
+                subject(toUsdcBigNumber(1500), user1)
+              ).to.be.revertedWith("LiteVault__Unauthorized");
+            });
+          });
+
+          describe("fromMainnet", async () => {
+            const amountToMove = toUsdcBigNumber(1800);
+
+            beforeEach(async () => {
+              // use toMainnet before so that investedAssets is increased
+              await vault.connect(rebalancer).toMainnet(amountToMove);
+            });
+
+            const subject = async (
+              value: BigNumber,
+              sender: SignerWithAddress
+            ) => {
+              await usdc.connect(bridge).approve(vault.address, value);
+
+              return vault.connect(sender).fromMainnet(value);
+            };
+
+            it("should fromMainnet", async () => {
+              await subject(amountToMove, rebalancer);
+
+              expect(await vault.totalInvestedAssets()).to.equal(0);
+            });
+
+            it("should emit FromMainnet", async () => {
+              const result = await subject(amountToMove, rebalancer);
+
+              const events = (await result.wait())?.events as Event[];
+              expect(events?.length).to.be.greaterThanOrEqual(1);
+              expect(events[events.length - 1].event).to.equal("FromMainnet");
+              expect(
+                events[events.length - 1]?.args?.amountMoved.eq(amountToMove)
+              ).to.equal(true);
+              expect(events[events.length - 1]?.args?.bridgeAddress).to.equal(
+                bridge.address
+              );
+            });
+
+            it("should revert if not rebalancer", async () => {
+              await expect(subject(amountToMove, user1)).to.be.revertedWith(
+                "LiteVault__Unauthorized"
+              );
+            });
+          });
+        });
       }
     );
 
@@ -631,7 +752,7 @@ describe("LiteVault", () => {
         };
 
         it("should setBridgeAddress", async () => {
-          expect(await vault.bridgeAddress()).to.equal(bridgeAddress);
+          expect(await vault.bridgeAddress()).to.equal(bridge.address);
 
           await subject(user2.address, owner);
 
@@ -652,23 +773,6 @@ describe("LiteVault", () => {
       });
     });
   });
-
-  //   describe("rebalancer actions", async () => {
-  //     describe("updateMainnetExchangePrice", async () => {
-  //       it("should updateMainnetExchangePrice", async () => {});
-  //       it("should revert if not rebalancer", async () => {});
-  //     });
-  //     describe("fromMainnet", async () => {
-  //       it("should fromMainnet", async () => {});
-  //       it("should revert if not rebalancer", async () => {});
-  //     });
-  //     describe("toMainnet", async () => {
-  //       it("should toMainnet", async () => {});
-  // LiteVault__MinimumThreshold
-  //       it("should revert if not rebalancer", async () => {});
-  //     });
-  //   });
-  // });
 
   function toUsdcBigNumber(amount: number) {
     return BigNumber.from(amount * 1e6);
