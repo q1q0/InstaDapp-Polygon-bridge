@@ -84,7 +84,7 @@ abstract contract AdminActions is
 /// @dev actions executable by bridge only
 abstract contract BridgeActions is Modifiers {
     /// @notice rebalancer can set the mainnetExchangePrice
-    /// @param _mainnetExchangePrice the new mainnetExchangePrice
+    /// @param _mainnetExchangePrice the new mainnetExchangePrice in 1e18
     function updateMainnetExchangePrice(uint256 _mainnetExchangePrice)
         external
         onlyBridge
@@ -119,7 +119,7 @@ abstract contract RebalancerActions is ERC4626Upgradeable, Modifiers, Events {
         // (because asset on bridge has appreciated in value through yield over time)
         // 100 / 2 = 50;
         investedAssets += _amountToMove.mulDiv(
-            decimals(),
+            1e18, // mainnetExchangePrice is in 1e18
             mainnetExchangePrice
         );
 
@@ -141,11 +141,7 @@ abstract contract RebalancerActions is ERC4626Upgradeable, Modifiers, Events {
         // e.g. with an mainnetExchangePrice 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
         // (because asset on bridge has appreciated in value through yield over time)
         // 100 / 2 = 50;
-        investedAssets -= _amountToMove.mulDiv(
-            decimals(),
-            mainnetExchangePrice,
-            Math.Rounding.Down
-        );
+        investedAssets -= _amountToMove.mulDiv(1e18, mainnetExchangePrice);
 
         emit FromMainnet(bridgeAddress, _amountToMove);
     }
@@ -246,9 +242,8 @@ contract LiteVault is AdminActions, BridgeActions, RebalancerActions {
         // 100 * 2 = 200;
         return
             investedAssets.mulDiv(
-                mainnetExchangePrice,
-                decimals(),
-                Math.Rounding.Down
+                mainnetExchangePrice, // mainnetExchangePrice is in 1e18
+                1e18
             );
     }
 
