@@ -7,108 +7,80 @@ import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/
 import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-error LiteVault__InvalidParams();
-error LiteVault__Unauthorized();
-error LiteVault__MinimumThreshold();
+import {Helpers} from "./Helpers.sol";
+import {Variables} from "./Variables.sol";
+import {Modifiers} from "./Modifiers.sol";
+import {Events} from "./Events.sol";
+import "./Errors.sol";
+
+/// @title AdminActions
+/// @dev handles all admin actions, like setters for state variables
+abstract contract AdminActions is OwnableUpgradeable, Modifiers {
+    /// @notice owner can set the minimumThresholdPercentage
+    /// @param _minimumThresholdPercentage the new minimumThresholdPercentage
+    function setMinimumThresholdPercentage(uint256 _minimumThresholdPercentage)
+        external
+        onlyOwner
+        validPercentage(_minimumThresholdPercentage)
+    {
+        minimumThresholdPercentage = _minimumThresholdPercentage;
+    }
+
+    /// @notice owner can add or remove allowed rebalancers
+    /// @param rebalancer the address for the rebalancer to set the flag for
+    /// @param allowed flag for if rebalancer is allowed or not
+    function setRebalancer(address rebalancer, bool allowed)
+        external
+        onlyOwner
+    {
+        allowedRebalancers[rebalancer] = allowed;
+    }
+
+    /// @notice owner can set the withdrawFeeAbsoluteMin
+    /// @param _withdrawFeeAbsoluteMin the new withdrawFeeAbsoluteMin
+    function setWithdrawFeeAbsoluteMin(uint256 _withdrawFeeAbsoluteMin)
+        external
+        onlyOwner
+    {
+        withdrawFeeAbsoluteMin = _withdrawFeeAbsoluteMin;
+    }
+
+    /// @notice owner can set the withdrawFeePercentage
+    /// @param _withdrawFeePercentage the new withdrawFeePercentage
+    function setWithdrawFeePercentage(uint256 _withdrawFeePercentage)
+        external
+        onlyOwner
+        validPercentage(_withdrawFeePercentage)
+    {
+        withdrawFeePercentage = _withdrawFeePercentage;
+    }
+
+    /// @notice owner can set the withdrawFeeReceiver
+    /// @param _withdrawFeeReceiver the new withdrawFeeReceiver
+    function setWithdrawFeeReceiver(address _withdrawFeeReceiver)
+        external
+        onlyOwner
+        validAddress(_withdrawFeeReceiver)
+    {
+        withdrawFeeReceiver = _withdrawFeeReceiver;
+    }
+
+    /// @notice owner can set the bridgeAddress
+    /// @param _bridgeAddress the new bridgeAddress
+    function setBridgeAddress(address _bridgeAddress)
+        external
+        onlyOwner
+        validAddress(_bridgeAddress)
+    {
+        bridgeAddress = _bridgeAddress;
+    }
+}
 
 /// @title LiteVault
 /// @notice ERC4626 compatible vault taking ERC20 asset and investing it via bridge on mainnet
-contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
+contract LiteVault is ERC4626Upgradeable, AdminActions, Helpers, Events {
     using Math for uint256;
     using SafeERC20Upgradeable for IERC20Upgradeable;
-
-    /***********************************|
-    |             CONSTANTS             |
-    |__________________________________*/
-
-    /// @notice upper limit of percentage values
-    /// with 1e6 as base for percentage values 1e8 is 100%
-    uint256 public constant maximumPercentageRange = 1e8;
-
-    /***********************************|
-    |           STATE VARIABLES         |
-    |__________________________________*/
-
-    /// @notice list of addresses that are allowed to access toMainnet and fromMainnet functions
-    /// modifiable by owner
-    mapping(address => bool) public allowedRebalancers;
-
-    /// @notice percentage of token in 1e6 that should remain in the vault when transferring to mainnet.
-    /// this number is given in 1e6, i.e. 1% would equal 1_000_000, 10% would be 10_000_000 etc.
-    /// e.g.: if the threshold is 10% and the vault’s TVL is 1M USDC,
-    /// then 900k USDC will be transferred to the mainnet iToken vaul
-    /// and 100k USDC will sit idle here for instant withdraws for users.
-    /// modifiable by owner
-    uint256 public minimumThresholdPercentage;
-
-    /// @notice address that receives the withdraw fee
-    /// modifiable by owner
-    address public withdrawFeeReceiver;
-
-    /// @notice withdraw fee is either amount in percentage or absolute minimum. This var defines the percentage in 1e6
-    /// this number is given in 1e6, i.e. 1% would equal 1_000_000, 10% would be 10_000_000 etc.
-    /// modifiable by owner
-    uint256 public withdrawFeePercentage;
-    /// @notice withdraw fee is either amount in percentage or absolute minimum. This var defines the absolute minimum
-    /// this number is given in decimals for the respective asset of the vault.
-    /// modifiable by owner
-    uint256 public withdrawFeeAbsoluteMin;
-
-    /// @notice bridge address to which funds will be transferred to when calling toMainnet
-    /// modifiable by owner
-    address public bridgeAddress;
-
-    /// @notice exchange price in asset.decimals
-    /// modifiable by rebalancers
-    uint256 public mainnetExchangePrice;
-
-    /// @notice total (original) raw amount of assets currently committed to invest via bridge
-    /// updated in fromMainnet and toMainnet
-    uint256 internal investedAssets;
-
-    /***********************************|
-    |               EVENTS              |
-    |__________________________________*/
-
-    /// @notice emitted whenever a user withdraws assets and a fee for withdrawFeeReceiver is collected
-    event WithdrawFeeCollected(address indexed receiver, uint256 indexed fee);
-
-    /// @notice emitted whenever fromMainnet is executed
-    event FromMainnet(
-        address indexed bridgeAddress,
-        uint256 indexed amountMoved
-    );
-
-    /// @notice emitted whenever toMainnet is executed
-    event ToMainnet(address indexed bridgeAddress, uint256 indexed amountMoved);
-
-    /***********************************|
-    |              MODIFIERS            |
-    |__________________________________*/
-
-    /// @notice checks if an address is not 0x000...
-    modifier validAddress(address _address) {
-        if (_address == address(0)) {
-            revert LiteVault__InvalidParams();
-        }
-        _;
-    }
-
-    /// @notice checks if a percentage value is within the maximumPercentageRange
-    modifier validPercentage(uint256 percentage) {
-        if (percentage > maximumPercentageRange) {
-            revert LiteVault__InvalidParams();
-        }
-        _;
-    }
-
-    /// @notice checks if msg.sender is an allowed rebalancer
-    modifier onlyAllowedRebalancer() {
-        if (!allowedRebalancers[msg.sender]) {
-            revert LiteVault__Unauthorized();
-        }
-        _;
-    }
 
     /***********************************|
     |    CONSTRUCTOR / INITIALIZERS     |
@@ -321,89 +293,8 @@ contract LiteVault is ERC4626Upgradeable, OwnableUpgradeable {
     }
 
     /***********************************|
-    |             OWNER ONLY            |
-    |__________________________________*/
-
-    /// @notice owner can set the minimumThresholdPercentage
-    /// @param _minimumThresholdPercentage the new minimumThresholdPercentage
-    function setMinimumThresholdPercentage(uint256 _minimumThresholdPercentage)
-        external
-        onlyOwner
-        validPercentage(_minimumThresholdPercentage)
-    {
-        minimumThresholdPercentage = _minimumThresholdPercentage;
-    }
-
-    /// @notice owner can add or remove allowed rebalancers
-    /// @param rebalancer the address for the rebalancer to set the flag for
-    /// @param allowed flag for if rebalancer is allowed or not
-    function setRebalancer(address rebalancer, bool allowed)
-        external
-        onlyOwner
-    {
-        allowedRebalancers[rebalancer] = allowed;
-    }
-
-    /// @notice owner can set the withdrawFeeAbsoluteMin
-    /// @param _withdrawFeeAbsoluteMin the new withdrawFeeAbsoluteMin
-    function setWithdrawFeeAbsoluteMin(uint256 _withdrawFeeAbsoluteMin)
-        external
-        onlyOwner
-    {
-        withdrawFeeAbsoluteMin = _withdrawFeeAbsoluteMin;
-    }
-
-    /// @notice owner can set the withdrawFeePercentage
-    /// @param _withdrawFeePercentage the new withdrawFeePercentage
-    function setWithdrawFeePercentage(uint256 _withdrawFeePercentage)
-        external
-        onlyOwner
-        validPercentage(_withdrawFeePercentage)
-    {
-        withdrawFeePercentage = _withdrawFeePercentage;
-    }
-
-    /// @notice owner can set the withdrawFeeReceiver
-    /// @param _withdrawFeeReceiver the new withdrawFeeReceiver
-    function setWithdrawFeeReceiver(address _withdrawFeeReceiver)
-        external
-        onlyOwner
-        validAddress(_withdrawFeeReceiver)
-    {
-        withdrawFeeReceiver = _withdrawFeeReceiver;
-    }
-
-    /// @notice owner can set the bridgeAddress
-    /// @param _bridgeAddress the new bridgeAddress
-    function setBridgeAddress(address _bridgeAddress)
-        external
-        onlyOwner
-        validAddress(_bridgeAddress)
-    {
-        bridgeAddress = _bridgeAddress;
-    }
-
-    /***********************************|
     |              INTERNAL             |
     |__________________________________*/
-
-    /// @dev calculates a percentage amount of a number based on the 1e6 decimals expected
-    /// @param amount the amount to calculate the percentage on
-    /// @param percentage the desired percentage in 1e6
-    /// @param rounding the rounding flag from Openzeppelin Math library, either Up or Down
-    /// @return the percentage amount
-    function _getPercentageAmount(
-        uint256 amount,
-        uint256 percentage,
-        Math.Rounding rounding
-    ) internal pure returns (uint256) {
-        return
-            amount.mulDiv(
-                percentage,
-                1e8, // percentage is in 1e6( 1% is 1_000_000) here we want to have 100% as denominator
-                rounding
-            );
-    }
 
     /// @dev collects the withdraw fee on assetsAmount and emits WithdrawFeeCollected
     /// @param assetsAmount the amount of assets being withdrawn

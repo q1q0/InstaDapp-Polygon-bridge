@@ -4,99 +4,25 @@ pragma solidity >=0.8.17;
 import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {ILiteVault} from "./interfaces/ILiteVault.sol";
+import {ILiteVault} from "../vault/Interfaces.sol";
 
-error ExcessWithdrawHandler__NotExcess();
-error ExcessWithdrawHandler__InvalidParams();
-error ExcessWithdrawHandler__Unauthorized();
-error ExcessWithdrawHandler__FeeNotSet();
+import {Variables} from "./Variables.sol";
+import {Modifiers} from "./Modifiers.sol";
+import {Events} from "./Events.sol";
+import "./Errors.sol";
 
 /// @title ExcessWithdrawHandler
 /// @notice Handles excess withdraws for LiteVaults. I.e. users can request withdraws here that surpass
 /// the minimumThreshold from the LiteVault by locking their iTokens here
-contract ExcessWithdrawHandler is Ownable {
+contract ExcessWithdrawHandler is Ownable, Variables, Modifiers, Events {
     using Math for uint256;
     using SafeERC20Upgradeable for ILiteVault;
-
-    struct ExcessWithdraw {
-        // fee to cover any cost for e.g. unwinding, slippages, deleveraging etc. on mainnet
-        // set and updated by bot according to observations, as an absolute amount
-        uint256 penaltyFee;
-        // amount of locked vault tokens (shares) until withdraw is executed
-        uint256 shares;
-        // maximum penaltyFee for the withdraw as set by user as an absolute amount
-        uint256 maxPenaltyFee;
-        // receiver of the tokens at execute withdraw time
-        address receiver;
-    }
-
-    /***********************************|
-    |           STATE VARIABLES         |
-    |__________________________________*/
-
-    /// @notice the LiteVault that this ExcessWithdrawHandler interacts with
-    ILiteVault public immutable vault;
-
-    /// @notice the total amount of assets (raw) that is currently queued for excess withdraw
-    /// @dev useful for the off-chain bot to keep the vault balance high enough
-    /// balance in vault should be ExcessWithdrawHandler.queuedAmount + LiteVault.minimumThreshold
-    /// This is inclusive of any withdraw fee
-    uint256 public queuedAmount;
-
-    /// @notice maps a user address to all the ids for excess withdraws this user has currently queued up
-    /// @dev all queued withdraw ids for a user can be fetched through this mapping and fed into the getter of excessWithdraws mapping
-    mapping(address => bytes32[]) public excessWithdrawIds;
-
-    /// @notice maps an excess withdraw id to the data struct for that ExcessWithdraw request
-    mapping(bytes32 => ExcessWithdraw) public excessWithdraws;
-
-    /// @notice list of addresses that are allowed to set the penalty fees for ExcessWithdraws
-    /// modifiable by owner
-    mapping(address => bool) public allowedFeeSetters;
-
-    /***********************************|
-    |               EVENTS              |
-    |__________________________________*/
-
-    /// @notice emitted when owner requests an excess withdraw for receiver
-    event ExcessWithdrawRequested(
-        bytes32 indexed excessWithdrawId,
-        address indexed owner,
-        address indexed receiver,
-        uint256 shares,
-        uint256 assets
-    );
-
-    /// @notice emitted when anyone triggers an execute withdraw to receiver
-    event ExcessWithdrawExecuted(
-        bytes32 indexed excessWithdrawId,
-        address indexed receiver,
-        uint256 shares,
-        uint256 assets
-    );
-
-    /// @notice emitted when a feeSetter sets the penalty fee for an excess withdraw request
-    event PenaltyFeeSet(bytes32 indexed excessWithdrawId, uint256 penaltyFee);
-
-    /***********************************|
-    |              MODIFIERS            |
-    |__________________________________*/
-
-    /// @notice checks if msg.sender is an allowed feeSetter
-    modifier onlyAllowedFeeSetter() {
-        if (!allowedFeeSetters[msg.sender]) {
-            revert ExcessWithdrawHandler__Unauthorized();
-        }
-        _;
-    }
 
     /***********************************|
     |           CONSTRUCTOR             |
     |__________________________________*/
 
-    constructor(ILiteVault _vault) Ownable() {
-        vault = _vault;
-    }
+    constructor(ILiteVault _vault) Ownable() Variables(_vault) {}
 
     /***********************************|
     |           PUBLIC API              |
