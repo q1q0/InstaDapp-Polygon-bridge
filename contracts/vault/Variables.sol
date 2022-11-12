@@ -26,9 +26,8 @@ contract Variables {
     /// modifiable by owner
     uint256 public minimumThresholdPercentage;
 
-    /// @notice address that receives the withdraw fee
-    /// modifiable by owner
-    address public withdrawFeeReceiver;
+    /// @notice amount of withdraw fees collected. withdrawable by owner
+    uint256 public collectedFees;
 
     /// @notice withdraw fee is either amount in percentage or absolute minimum. This var defines the percentage in 1e6
     /// this number is given in 1e6, i.e. 1% would equal 1_000_000, 10% would be 10_000_000 etc.
