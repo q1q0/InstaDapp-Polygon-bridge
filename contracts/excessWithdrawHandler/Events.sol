@@ -19,4 +19,7 @@ contract Events {
 
     /// @notice emitted when a feeSetter updates the current penalty fee
     event PenaltyFeeSet(uint32 penaltyFeePercentage);
+
+    /// @notice emitted whenever fromVault is executed
+    event FromVault(uint256 indexed amountMoved, uint256 indexed sharesBurned);
 }

@@ -13,6 +13,15 @@ abstract contract Modifiers is Variables {
         _;
     }
 
+    /// @notice checks if msg.sender is an allowed fulfiller
+    modifier onlyAllowedFulfiller() {
+        if (!allowedFulfillers[msg.sender]) {
+            revert ExcessWithdrawHandler__Unauthorized();
+        }
+        _;
+    }
+
+    /// @notice checks that a percentage is higher than or equal the current penaltyFeePercentage
     modifier isGtePenaltyFee(uint32 _maxPenaltyFeePercentage) {
         if (_maxPenaltyFeePercentage < penaltyFeePercentage) {
             revert ExcessWithdrawHandler__InvalidParams();

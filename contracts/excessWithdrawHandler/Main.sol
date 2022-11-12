@@ -2,21 +2,90 @@
 pragma solidity >=0.8.17;
 
 import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {ILiteVault} from "../vault/Interfaces.sol";
 
+import {ILiteVault} from "../vault/Interfaces.sol";
 import {Variables} from "./Variables.sol";
 import {Modifiers} from "./Modifiers.sol";
 import {Events} from "./Events.sol";
 import "./Errors.sol";
 
+/// @title AdminActions
+/// @notice actions that owner can execute
+abstract contract AdminActions is Ownable, Variables {
+    /// @notice owner can add or remove allowed feeSetters
+    /// @param _feeSetter the address for the feeSetter to set the flag for
+    /// @param _allowed flag for if feeSetter is allowed or not
+    function setFeeSetter(address _feeSetter, bool _allowed)
+        external
+        onlyOwner
+    {
+        allowedFeeSetters[_feeSetter] = _allowed;
+    }
+
+    /// @notice owner can add or remove allowed fulfillers
+    /// @param _fulfiller the address for the fulfiller to set the flag for
+    /// @param _allowed flag for if fulfiller is allowed or not
+    function setFulfiller(address _fulfiller, bool _allowed)
+        external
+        onlyOwner
+    {
+        allowedFulfillers[_fulfiller] = _allowed;
+    }
+}
+
+/// @title FeeSetterActions
+/// @notice actions that allowed feeSetters can execute
+abstract contract FeeSetterActions is Modifiers, Events {
+    /// @notice feeSetter can set the current penaltyFeePercentage
+    /// @param _penaltyFeePercentage the new penaltyFeePercentage
+    function setPenaltyFee(uint32 _penaltyFeePercentage)
+        external
+        onlyAllowedFeeSetter
+    {
+        // ensure valid percentage range (below 100%)
+        if (_penaltyFeePercentage > maximumPercentageRange) {
+            revert ExcessWithdrawHandler__InvalidParams();
+        }
+
+        penaltyFeePercentage = _penaltyFeePercentage;
+
+        emit PenaltyFeeSet(_penaltyFeePercentage);
+    }
+}
+
+/// @title FulfillerActions
+/// @notice actions that allowed fulfillers can execute
+abstract contract FulfillerActions is Modifiers, Events {
+    /// @param _amountToMove (raw) amount of assets to transfer from vault
+    function fromVault(uint256 _amountToMove) external onlyAllowedFulfiller {
+        uint256 shares = vault.previewWithdraw(_amountToMove);
+
+        // no need to explicitly check that enough shares are locked in this contract,
+        // vault checks for that anyway when executing redeem.
+        // redeem shares from vault (burns them) and sends assets to this contract
+        vault.redeem(shares, address(this), address(this));
+
+        // update state for total queued amount
+        totalQueuedAmount -= _amountToMove;
+
+        emit FromVault(_amountToMove, shares);
+    }
+}
+
 /// @title ExcessWithdrawHandler
 /// @notice Handles excess withdraws for LiteVaults. I.e. users can request withdraws here that surpass
 /// the minimumThreshold from the LiteVault by locking their iTokens here
-contract ExcessWithdrawHandler is Ownable, Variables, Modifiers, Events {
+contract ExcessWithdrawHandler is
+    AdminActions,
+    FulfillerActions,
+    FeeSetterActions
+{
     using Math for uint256;
     using SafeERC20Upgradeable for ILiteVault;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
 
     /***********************************|
     |           CONSTRUCTOR             |
@@ -57,50 +126,20 @@ contract ExcessWithdrawHandler is Ownable, Variables, Modifiers, Events {
     /// @notice executes a queued withdraw (withdraws funds)
     /// @param _receiver the receiver of the assets
     function executeExcessWithdraw(address _receiver) external {
-        // check if receiver has any queued withdrawals
+        // check if receiver has any queued withdraw amounts
         uint256 assets = queuedWithdrawAmounts[_receiver];
         if (assets == 0) {
             return;
         }
 
-        // update state
-        uint256 shares = vault.convertToAssets(assets);
-        totalQueuedAmount -= assets;
+        // update state: reduce user withdraw amount
         queuedWithdrawAmounts[_receiver] -= assets;
 
-        // redeem shares from vault (burns them) and sends assets to receiver
-        vault.redeem(shares, _receiver, address(this));
+        // transfer assets to _receiver
+        IERC20Upgradeable(vault.asset()).safeTransfer(_receiver, assets);
 
+        uint256 shares = vault.convertToAssets(assets);
         emit ExcessWithdrawExecuted(_receiver, shares, assets);
-    }
-
-    /***********************************|
-    |          FEE SETTER ONLY          |
-    |__________________________________*/
-
-    /// @notice feeSetter can set the current penaltyFeePercentage
-    /// @param _penaltyFeePercentage the new penaltyFeePercentage
-    function setPenaltyFee(uint32 _penaltyFeePercentage)
-        external
-        onlyAllowedFeeSetter
-    {
-        penaltyFeePercentage = _penaltyFeePercentage;
-
-        emit PenaltyFeeSet(_penaltyFeePercentage);
-    }
-
-    /***********************************|
-    |             OWNER ONLY            |
-    |__________________________________*/
-
-    /// @notice owner can add or remove allowed feeSetters
-    /// @param _feeSetter the address for the feeSetter to set the flag for
-    /// @param _allowed flag for if feeSetter is allowed or not
-    function setFeeSetter(address _feeSetter, bool _allowed)
-        external
-        onlyOwner
-    {
-        allowedFeeSetters[_feeSetter] = _allowed;
     }
 
     /***********************************|

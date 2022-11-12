@@ -4,6 +4,14 @@ import {ILiteVault} from "../vault/Interfaces.sol";
 
 contract Variables {
     /***********************************|
+    |             CONSTANTS             |
+    |__________________________________*/
+
+    /// @notice upper limit of percentage values
+    /// with 1e6 as base for percentage values 1e8 is 100%
+    uint32 public constant maximumPercentageRange = 1e8;
+
+    /***********************************|
     |           STATE VARIABLES         |
     |__________________________________*/
 
@@ -28,6 +36,10 @@ contract Variables {
     /// @notice list of addresses that are allowed to set the penalty fee
     /// modifiable by owner
     mapping(address => bool) public allowedFeeSetters;
+
+    /// @notice list of addresses that are allowed to fulfill withdraws by executing fromVault calls
+    /// modifiable by owner
+    mapping(address => bool) public allowedFulfillers;
 
     /***********************************|
     |           CONSTRUCTOR             |

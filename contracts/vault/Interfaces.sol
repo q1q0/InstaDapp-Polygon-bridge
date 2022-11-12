@@ -5,4 +5,13 @@ import {IERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/interface
 
 interface ILiteVault is IERC4626Upgradeable {
     function minimumThresholdAmount() external view returns (uint256);
+
+    function allowedRebalancers(address _rebalancer)
+        external
+        view
+        returns (bool);
+
+    function fromMainnet(uint256 _amountToMove) external;
+
+    function toMainnet(uint256 _amountToMove) external;
 }
