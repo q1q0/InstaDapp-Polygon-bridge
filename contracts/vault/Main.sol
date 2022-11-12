@@ -234,7 +234,8 @@ contract LiteVault is AdminActions, BridgeActions, RebalancerActions {
     function totalAssets() public view override returns (uint256) {
         return
             IERC20Upgradeable(asset()).balanceOf(address(this)) + // assets in contract (idle)
-            totalInvestedAssets(); // plus assets invested through bridge (active)
+            totalInvestedAssets() - // plus assets invested through bridge (active)
+            collectedFees; // minus already collected Fees just sitting in the vault until withdraw by admin
     }
 
     /// @notice calculates the total invested assets that are bridged
