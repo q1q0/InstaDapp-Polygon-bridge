@@ -80,9 +80,80 @@ abstract contract AdminActions is
     }
 }
 
+/// @title BridgeActions
+/// @dev actions executable by bridge only
+abstract contract BridgeActions is Modifiers {
+    /// @notice rebalancer can set the mainnetExchangePrice
+    /// @param _mainnetExchangePrice the new mainnetExchangePrice
+    function updateMainnetExchangePrice(uint256 _mainnetExchangePrice)
+        external
+        onlyBridge
+    {
+        mainnetExchangePrice = _mainnetExchangePrice;
+    }
+}
+
+/// @title RebalancerActions
+/// @dev actions executable by allowed rebalancers only
+abstract contract RebalancerActions is ERC4626Upgradeable, Modifiers, Events {
+    using Math for uint256;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
+
+    function minimumThresholdAmount() public view virtual returns (uint256);
+
+    /// @notice moves amountToMove assets to the bridgeAddress
+    /// @param _amountToMove (raw) amount of assets to transfer to bridge
+    function toMainnet(uint256 _amountToMove) external onlyAllowedRebalancer {
+        // amount of principal left must cover at least minimumThresholdAmount
+        uint256 principalLeft = investedAssets - _amountToMove;
+        if (principalLeft < minimumThresholdAmount()) {
+            revert LiteVault__MinimumThreshold();
+        }
+
+        // send amountToMove to bridge
+        IERC20Upgradeable(asset()).safeTransfer(bridgeAddress, _amountToMove);
+
+        // update the amount of bridged principal (raw amount)
+        // bridgedAmount = amountToMove / mainnetExchangePrice
+        // e.g. with an mainnetExchangePrice 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
+        // (because asset on bridge has appreciated in value through yield over time)
+        // 100 / 2 = 50;
+        investedAssets += _amountToMove.mulDiv(
+            decimals(),
+            mainnetExchangePrice
+        );
+
+        emit ToMainnet(bridgeAddress, _amountToMove);
+    }
+
+    /// @notice moves amountToMove from bridge to this contract
+    /// @param _amountToMove (raw) amount of assets to transfer from bridge
+    function fromMainnet(uint256 _amountToMove) external onlyAllowedRebalancer {
+        // transferFrom rebalancer
+        IERC20Upgradeable(asset()).safeTransferFrom(
+            bridgeAddress,
+            address(this),
+            _amountToMove
+        );
+
+        // update the amount of bridged principal (raw amount)
+        // bridgedAmount = amountToMove / mainnetExchangePrice
+        // e.g. with an mainnetExchangePrice 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
+        // (because asset on bridge has appreciated in value through yield over time)
+        // 100 / 2 = 50;
+        investedAssets -= _amountToMove.mulDiv(
+            decimals(),
+            mainnetExchangePrice,
+            Math.Rounding.Down
+        );
+
+        emit FromMainnet(bridgeAddress, _amountToMove);
+    }
+}
+
 /// @title LiteVault
 /// @notice ERC4626 compatible vault taking ERC20 asset and investing it via bridge on mainnet
-contract LiteVault is AdminActions, Events {
+contract LiteVault is AdminActions, BridgeActions, RebalancerActions {
     using Math for uint256;
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
@@ -149,7 +220,7 @@ contract LiteVault is AdminActions, Events {
 
     /// @notice calculates the minimum threshold amount of asset that must stay in the contract
     /// @return minimumThresholdAmount
-    function minimumThresholdAmount() public view returns (uint256) {
+    function minimumThresholdAmount() public view override returns (uint256) {
         return
             investedAssets.mulDiv(
                 minimumThresholdPercentage,
@@ -215,72 +286,6 @@ contract LiteVault is AdminActions, Events {
         _withdraw(msg.sender, _receiver, _owner, assetsAfterFee, _shares);
 
         return assetsAfterFee;
-    }
-
-    /***********************************|
-    |          REBALANCER ONLY          |
-    |__________________________________*/
-
-    /// @notice moves amountToMove assets to the bridgeAddress
-    /// @param _amountToMove (raw) amount of assets to transfer to bridge
-    function toMainnet(uint256 _amountToMove) external onlyAllowedRebalancer {
-        // amount of principal left must cover at least minimumThresholdAmount
-        uint256 principalLeft = investedAssets - _amountToMove;
-        if (principalLeft < minimumThresholdAmount()) {
-            revert LiteVault__MinimumThreshold();
-        }
-
-        // send amountToMove to bridge
-        IERC20Upgradeable(asset()).safeTransfer(bridgeAddress, _amountToMove);
-
-        // update the amount of bridged principal (raw amount)
-        // bridgedAmount = amountToMove / mainnetExchangePrice
-        // e.g. with an mainnetExchangePrice 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
-        // (because asset on bridge has appreciated in value through yield over time)
-        // 100 / 2 = 50;
-        investedAssets += _amountToMove.mulDiv(
-            decimals(),
-            mainnetExchangePrice
-        );
-
-        emit ToMainnet(bridgeAddress, _amountToMove);
-    }
-
-    /// @notice moves amountToMove from bridge to this contract
-    /// @param _amountToMove (raw) amount of assets to transfer from bridge
-    function fromMainnet(uint256 _amountToMove) external onlyAllowedRebalancer {
-        // transferFrom rebalancer
-        IERC20Upgradeable(asset()).safeTransferFrom(
-            bridgeAddress,
-            address(this),
-            _amountToMove
-        );
-
-        // update the amount of bridged principal (raw amount)
-        // bridgedAmount = amountToMove / mainnetExchangePrice
-        // e.g. with an mainnetExchangePrice 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
-        // (because asset on bridge has appreciated in value through yield over time)
-        // 100 / 2 = 50;
-        investedAssets -= _amountToMove.mulDiv(
-            decimals(),
-            mainnetExchangePrice,
-            Math.Rounding.Down
-        );
-
-        emit FromMainnet(bridgeAddress, _amountToMove);
-    }
-
-    /***********************************|
-    |             BRIDGE ONLY           |
-    |__________________________________*/
-
-    /// @notice rebalancer can set the mainnetExchangePrice
-    /// @param _mainnetExchangePrice the new mainnetExchangePrice
-    function updateMainnetExchangePrice(uint256 _mainnetExchangePrice)
-        external
-        onlyBridge
-    {
-        mainnetExchangePrice = _mainnetExchangePrice;
     }
 
     /***********************************|
