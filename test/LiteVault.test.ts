@@ -24,7 +24,6 @@ describe("LiteVault", () => {
   const defaultDepositAmount = toUsdcBigNumber(1000);
 
   const minimumThresholdPercentage = 10000000; // 10%
-  const withdrawFeeReceiver = () => owner.address;
   const withdrawFeePercentage = 10000; // 0.01%
   const withdrawFeeAbsoluteMin = toUsdcBigNumber(20); // usdc has 6 decimals -> 20 USDC.
   const mainnetExchangePrice = toUsdcBigNumber(2);
@@ -89,19 +88,20 @@ describe("LiteVault", () => {
         owner.address,
         usdc.address,
         minimumThresholdPercentage,
-        withdrawFeeReceiver(),
         withdrawFeePercentage,
         withdrawFeeAbsoluteMin,
         bridge.address,
         mainnetExchangePrice
       );
     };
+
     it("should revert if already initialized", async () => {
       await subject();
       await expect(subject()).to.be.revertedWith(
         "Initializable: contract is already initialized"
       );
     });
+
     it("should initialize", async () => {
       await subject();
       expect(await vault.owner()).to.eq(owner.address);
@@ -109,7 +109,6 @@ describe("LiteVault", () => {
       expect(await vault.minimumThresholdPercentage()).to.eq(
         minimumThresholdPercentage
       );
-      expect(await vault.withdrawFeeReceiver()).to.eq(withdrawFeeReceiver());
       expect(await vault.withdrawFeePercentage()).to.eq(withdrawFeePercentage);
       expect(await vault.withdrawFeeAbsoluteMin()).to.eq(
         withdrawFeeAbsoluteMin
@@ -125,7 +124,6 @@ describe("LiteVault", () => {
         owner.address,
         usdc.address,
         minimumThresholdPercentage,
-        withdrawFeeReceiver(),
         withdrawFeePercentage,
         withdrawFeeAbsoluteMin,
         bridge.address,
@@ -147,6 +145,7 @@ describe("LiteVault", () => {
         expect((await vault.balanceOf(user1.address)).gt(0)).to.equal(true);
       });
     });
+
     describe("mint", async () => {
       // not thoroughly tested, this is actually already covered by OpenZeppelin.
       it("should mint", async () => {
@@ -197,16 +196,14 @@ describe("LiteVault", () => {
             });
 
             it("should collect withdraw fee as asbolute", async () => {
-              const initialBalance = await usdc.balanceOf(
-                withdrawFeeReceiver()
-              );
+              const initialBalance = await vault.collectedFees();
 
               await vault
                 .connect(user1)
                 .withdraw(defaultDepositAmount, user1.address, user1.address);
 
               expect(
-                (await usdc.balanceOf(withdrawFeeReceiver())).eq(
+                (await vault.collectedFees()).eq(
                   initialBalance.add(withdrawFeeAbsoluteMin)
                 )
               ).to.equal(true);
@@ -218,16 +215,14 @@ describe("LiteVault", () => {
               await usdc.connect(user1).approve(vault.address, bigDeposit);
               await vault.connect(user1).deposit(bigDeposit, user1.address);
 
-              const initialBalance = await usdc.balanceOf(
-                withdrawFeeReceiver()
-              );
+              const initialBalance = await vault.collectedFees();
 
               await vault
                 .connect(user1)
                 .withdraw(bigDeposit, user1.address, user1.address);
 
               expect(
-                (await usdc.balanceOf(withdrawFeeReceiver())).eq(
+                (await vault.collectedFees()).eq(
                   initialBalance.add(bigDeposit.div(10000)) // bigDeposit / 10000 = 0.01%
                 )
               ).to.equal(true);
@@ -240,11 +235,9 @@ describe("LiteVault", () => {
 
               const events = (await result.wait())?.events as Event[];
               expect(events?.length).to.be.greaterThanOrEqual(1);
-              expect(events[1]?.args?.payer).to.equal(user1.address);
-              expect(events[1]?.args?.feeReceiver).to.equal(
-                withdrawFeeReceiver()
-              );
-              expect(events[1]?.args?.fee).to.equal(withdrawFeeAbsoluteMin);
+              expect(events[0]?.event).to.equal("WithdrawFeeCollected");
+              expect(events[0]?.args?.payer).to.equal(user1.address);
+              expect(events[0]?.args?.fee).to.equal(withdrawFeeAbsoluteMin);
             });
           });
 
@@ -263,9 +256,7 @@ describe("LiteVault", () => {
             });
 
             it("should collect withdraw fee as asbolute", async () => {
-              const initialBalance = await usdc.balanceOf(
-                withdrawFeeReceiver()
-              );
+              const initialBalance = await vault.collectedFees();
               const initialShares = await vault.balanceOf(user1.address);
 
               await vault
@@ -273,7 +264,7 @@ describe("LiteVault", () => {
                 .redeem(initialShares, user1.address, user1.address);
 
               expect(
-                (await usdc.balanceOf(withdrawFeeReceiver())).eq(
+                (await vault.collectedFees()).eq(
                   initialBalance.add(withdrawFeeAbsoluteMin)
                 )
               ).to.equal(true);
@@ -286,9 +277,7 @@ describe("LiteVault", () => {
               const initialShares = await vault.balanceOf(user1.address);
               await vault.connect(user1).deposit(bigDeposit, user1.address);
 
-              const initialBalance = await usdc.balanceOf(
-                withdrawFeeReceiver()
-              );
+              const initialBalance = await vault.collectedFees();
               const depositedShares = (
                 await vault.balanceOf(user1.address)
               ).sub(initialShares);
@@ -298,7 +287,7 @@ describe("LiteVault", () => {
                 .redeem(depositedShares, user1.address, user1.address);
 
               expect(
-                (await usdc.balanceOf(withdrawFeeReceiver())).eq(
+                (await vault.collectedFees()).eq(
                   initialBalance.add(bigDeposit.div(withdrawFeePercentage)) // bigDeposit / 10000 = 0.01%
                 )
               ).to.equal(true);
@@ -313,11 +302,9 @@ describe("LiteVault", () => {
 
               const events = (await result.wait())?.events as Event[];
               expect(events?.length).to.be.greaterThanOrEqual(1);
-              expect(events[1]?.args?.payer).to.equal(user1.address);
-              expect(events[1]?.args?.feeReceiver).to.equal(
-                withdrawFeeReceiver()
-              );
-              expect(events[1]?.args?.fee).to.equal(withdrawFeeAbsoluteMin);
+              expect(events[0]?.event).to.equal("WithdrawFeeCollected");
+              expect(events[0]?.args?.payer).to.equal(user1.address);
+              expect(events[0]?.args?.fee).to.equal(withdrawFeeAbsoluteMin);
             });
           });
         });
@@ -419,7 +406,7 @@ describe("LiteVault", () => {
               expect(await subject()).to.equal(toUsdcBigNumber(2000));
               // change mainnetExchangePrice
               await vault
-                .connect(rebalancer)
+                .connect(bridge)
                 .updateMainnetExchangePrice(mainnetExchangePrice.mul(2));
               // after changing the price to double the result should be 3000.
               // because 1000 was invested and doubled in vlaue
@@ -446,332 +433,302 @@ describe("LiteVault", () => {
               expect(await subject()).to.equal(toUsdcBigNumber(1000));
               // change mainnetExchangePrice
               await vault
-                .connect(rebalancer)
+                .connect(bridge)
                 .updateMainnetExchangePrice(mainnetExchangePrice.mul(2));
               // after changing the price to double the result should be 2000
               expect(await subject()).to.equal(toUsdcBigNumber(2000));
             });
           });
 
-          describe("isAllowedRebalancer", async () => {
-            const subject = async (addressToCheck: string) => {
-              return vault.isAllowedRebalancer(addressToCheck);
-            };
+          describe("bridge actions", async () => {
+            describe("updateMainnetExchangePrice", async () => {
+              const subject = async (
+                value: BigNumber,
+                sender: SignerWithAddress
+              ) => {
+                return vault.connect(sender).updateMainnetExchangePrice(value);
+              };
 
-            it("should get isAllowedRebalancer when allowed", async () => {
-              const result = await subject(rebalancer.address);
-              expect(result).to.equal(true);
+              it("should updateMainnetExchangePrice", async () => {
+                expect(
+                  (await vault.mainnetExchangePrice()).eq(mainnetExchangePrice)
+                ).to.equal(true);
+
+                await subject(toUsdcBigNumber(5), bridge);
+
+                expect(
+                  (await vault.mainnetExchangePrice()).eq(toUsdcBigNumber(5))
+                ).to.equal(true);
+              });
+
+              it("should revert if not bridge", async () => {
+                await expect(
+                  subject(toUsdcBigNumber(5), rebalancer)
+                ).to.be.revertedWith("LiteVault__Unauthorized");
+              });
+            });
+          });
+
+          describe("rebalancer actions", async () => {
+            describe("toMainnet", async () => {
+              const subject = async (
+                value: BigNumber,
+                sender: SignerWithAddress
+              ) => {
+                return vault.connect(sender).toMainnet(value);
+              };
+
+              it("should toMainnet", async () => {
+                // default deposit is 2000 so up to 1800 should be possible to move (minimumThreshold is 10%)
+                expect(await vault.totalInvestedAssets()).to.equal(0);
+
+                await subject(toUsdcBigNumber(1800), rebalancer);
+
+                expect(await vault.totalInvestedAssets()).to.equal(
+                  toUsdcBigNumber(1800)
+                );
+              });
+
+              it("should emit ToMainnet", async () => {
+                const result = await subject(toUsdcBigNumber(1800), rebalancer);
+
+                const events = (await result.wait())?.events as Event[];
+                expect(events?.length).to.be.greaterThanOrEqual(1);
+                expect(events[events.length - 1].event).to.equal("ToMainnet");
+                expect(
+                  events[events.length - 1]?.args?.amountMoved.eq(
+                    toUsdcBigNumber(1800)
+                  )
+                ).to.equal(true);
+                expect(events[events.length - 1]?.args?.bridgeAddress).to.equal(
+                  bridge.address
+                );
+              });
+
+              it("should revert if moving more than minimum threshold", async () => {
+                await expect(
+                  subject(toUsdcBigNumber(1900), rebalancer)
+                ).to.be.revertedWith("LiteVault__ExceedMinimumThreshold");
+              });
+
+              it("should revert if not rebalancer", async () => {
+                await expect(
+                  subject(toUsdcBigNumber(1500), user1)
+                ).to.be.revertedWith("LiteVault__Unauthorized");
+              });
             });
 
-            it("should get isAllowedRebalancer when not allowed", async () => {
-              const result = await subject(owner.address);
-              expect(result).to.equal(false);
+            describe("fromMainnet", async () => {
+              const amountToMove = toUsdcBigNumber(1800);
+
+              beforeEach(async () => {
+                // use toMainnet before so that investedAssets is increased
+                await vault.connect(rebalancer).toMainnet(amountToMove);
+              });
+
+              const subject = async (
+                value: BigNumber,
+                sender: SignerWithAddress
+              ) => {
+                await usdc.connect(bridge).approve(vault.address, value);
+
+                return vault.connect(sender).fromMainnet(value);
+              };
+
+              it("should fromMainnet", async () => {
+                await subject(amountToMove, rebalancer);
+
+                expect(await vault.totalInvestedAssets()).to.equal(0);
+              });
+
+              it("should emit FromMainnet", async () => {
+                const result = await subject(amountToMove, rebalancer);
+
+                const events = (await result.wait())?.events as Event[];
+                expect(events?.length).to.be.greaterThanOrEqual(1);
+                expect(events[events.length - 1].event).to.equal("FromMainnet");
+                expect(
+                  events[events.length - 1]?.args?.amountMoved.eq(amountToMove)
+                ).to.equal(true);
+                expect(events[events.length - 1]?.args?.bridgeAddress).to.equal(
+                  bridge.address
+                );
+              });
+
+              it("should revert if not rebalancer", async () => {
+                await expect(subject(amountToMove, user1)).to.be.revertedWith(
+                  "LiteVault__Unauthorized"
+                );
+              });
             });
           });
         });
 
-        describe("rebalancer actions", async () => {
-          describe("updateMainnetExchangePrice", async () => {
+        describe("owner actions", async () => {
+          describe("setMinimumThresholdPercentage", async () => {
             const subject = async (
-              value: BigNumber,
+              value: number,
               sender: SignerWithAddress
             ) => {
-              return vault.connect(sender).updateMainnetExchangePrice(value);
+              return vault.connect(sender).setMinimumThresholdPercentage(value);
             };
 
-            it("should updateMainnetExchangePrice", async () => {
-              expect(
-                (await vault.mainnetExchangePrice()).eq(mainnetExchangePrice)
-              ).to.equal(true);
+            it("should setMinimumThresholdPercentage", async () => {
+              expect(await vault.minimumThresholdPercentage()).to.equal(
+                10000000
+              );
 
-              await subject(toUsdcBigNumber(5), rebalancer);
+              await subject(20000000, owner);
 
-              expect(
-                (await vault.mainnetExchangePrice()).eq(toUsdcBigNumber(5))
-              ).to.equal(true);
+              expect(await vault.minimumThresholdPercentage()).to.equal(
+                20000000
+              );
             });
 
-            it("should revert if not rebalancer", async () => {
-              await expect(
-                subject(toUsdcBigNumber(5), user1)
-              ).to.be.revertedWith("LiteVault__Unauthorized");
+            it("should revert if not owner", async () => {
+              await expect(subject(2000000, user1)).to.be.revertedWith(
+                "Ownable: caller is not the owner"
+              );
+            });
+
+            it("should revert if not valid percentage amount", async () => {
+              // setting > 100% e.g. 110% should not be possible
+              await expect(subject(110000000, owner)).to.be.revertedWith(
+                "LiteVault__InvalidParams"
+              );
             });
           });
 
-          describe("toMainnet", async () => {
+          describe("setRebalancer", async () => {
             const subject = async (
-              value: BigNumber,
+              addressToSet: string,
+              value: boolean,
               sender: SignerWithAddress
             ) => {
-              return vault.connect(sender).toMainnet(value);
+              return vault.connect(sender).setRebalancer(addressToSet, value);
             };
 
-            it("should toMainnet", async () => {
-              // default deposit is 2000 so up to 1800 should be possible to move (minimumThreshold is 10%)
-              expect(await vault.totalInvestedAssets()).to.equal(0);
+            it("should setRebalancer flag true", async () => {
+              expect(await vault.allowedRebalancers(user1.address)).to.equal(
+                false
+              );
 
-              await subject(toUsdcBigNumber(1800), rebalancer);
+              await subject(user1.address, true, owner);
 
-              expect(await vault.totalInvestedAssets()).to.equal(
-                toUsdcBigNumber(1800)
+              expect(await vault.allowedRebalancers(user1.address)).to.equal(
+                true
               );
             });
 
-            it("should emit ToMainnet", async () => {
-              const result = await subject(toUsdcBigNumber(1800), rebalancer);
+            it("should setRebalancer flag false", async () => {
+              await subject(user1.address, true, owner);
 
-              const events = (await result.wait())?.events as Event[];
-              expect(events?.length).to.be.greaterThanOrEqual(1);
-              expect(events[events.length - 1].event).to.equal("ToMainnet");
-              expect(
-                events[events.length - 1]?.args?.amountMoved.eq(
-                  toUsdcBigNumber(1800)
-                )
-              ).to.equal(true);
-              expect(events[events.length - 1]?.args?.bridgeAddress).to.equal(
-                bridge.address
+              expect(await vault.allowedRebalancers(user1.address)).to.equal(
+                true
+              );
+
+              await subject(user1.address, false, owner);
+
+              expect(await vault.allowedRebalancers(user1.address)).to.equal(
+                false
               );
             });
 
-            it("should revert if moving more than minimum threshold", async () => {
+            it("should revert if not owner", async () => {
               await expect(
-                subject(toUsdcBigNumber(1900), rebalancer)
-              ).to.be.revertedWith("LiteVault__ExceedMinimumThreshold");
-            });
-
-            it("should revert if not rebalancer", async () => {
-              await expect(
-                subject(toUsdcBigNumber(1500), user1)
-              ).to.be.revertedWith("LiteVault__Unauthorized");
+                subject(user1.address, true, user1)
+              ).to.be.revertedWith("Ownable: caller is not the owner");
             });
           });
 
-          describe("fromMainnet", async () => {
-            const amountToMove = toUsdcBigNumber(1800);
-
-            beforeEach(async () => {
-              // use toMainnet before so that investedAssets is increased
-              await vault.connect(rebalancer).toMainnet(amountToMove);
-            });
-
+          describe("setWithdrawFeeAbsoluteMin", async () => {
             const subject = async (
               value: BigNumber,
               sender: SignerWithAddress
             ) => {
-              await usdc.connect(bridge).approve(vault.address, value);
-
-              return vault.connect(sender).fromMainnet(value);
+              return vault.connect(sender).setWithdrawFeeAbsoluteMin(value);
             };
 
-            it("should fromMainnet", async () => {
-              await subject(amountToMove, rebalancer);
+            it("should setWithdrawFeeAbsoluteMin", async () => {
+              expect(
+                (await vault.withdrawFeeAbsoluteMin()).eq(toUsdcBigNumber(20))
+              ).to.equal(true);
 
-              expect(await vault.totalInvestedAssets()).to.equal(0);
+              await subject(toUsdcBigNumber(50), owner);
+
+              expect(
+                (await vault.withdrawFeeAbsoluteMin()).toNumber()
+              ).to.equal(toUsdcBigNumber(50));
             });
 
-            it("should emit FromMainnet", async () => {
-              const result = await subject(amountToMove, rebalancer);
+            it("should revert if not owner", async () => {
+              await expect(
+                subject(toUsdcBigNumber(50), user1)
+              ).to.be.revertedWith("Ownable: caller is not the owner");
+            });
+          });
 
-              const events = (await result.wait())?.events as Event[];
-              expect(events?.length).to.be.greaterThanOrEqual(1);
-              expect(events[events.length - 1].event).to.equal("FromMainnet");
-              expect(
-                events[events.length - 1]?.args?.amountMoved.eq(amountToMove)
-              ).to.equal(true);
-              expect(events[events.length - 1]?.args?.bridgeAddress).to.equal(
-                bridge.address
+          describe("setWithdrawFeePercentage", async () => {
+            const subject = async (
+              value: number,
+              sender: SignerWithAddress
+            ) => {
+              return vault.connect(sender).setWithdrawFeePercentage(value);
+            };
+
+            it("should setWithdrawFeePercentage", async () => {
+              expect(await vault.withdrawFeePercentage()).to.equal(10000);
+
+              await subject(20000, owner);
+
+              expect(await vault.withdrawFeePercentage()).to.equal(20000);
+            });
+
+            it("should revert if not owner", async () => {
+              await expect(subject(20000, user1)).to.be.revertedWith(
+                "Ownable: caller is not the owner"
               );
             });
 
-            it("should revert if not rebalancer", async () => {
-              await expect(subject(amountToMove, user1)).to.be.revertedWith(
-                "LiteVault__Unauthorized"
+            it("should revert if not valid percentage amount", async () => {
+              // setting > 100% e.g. 110% should not be possible
+              await expect(subject(110000000, owner)).to.be.revertedWith(
+                "LiteVault__InvalidParams"
+              );
+            });
+          });
+
+          describe("setBridgeAddress", async () => {
+            const subject = async (
+              value: string,
+              sender: SignerWithAddress
+            ) => {
+              return vault.connect(sender).setBridgeAddress(value);
+            };
+
+            it("should setBridgeAddress", async () => {
+              expect(await vault.bridgeAddress()).to.equal(bridge.address);
+
+              await subject(user2.address, owner);
+
+              expect(await vault.bridgeAddress()).to.equal(user2.address);
+            });
+
+            it("should revert if not owner", async () => {
+              await expect(subject(user1.address, user1)).to.be.revertedWith(
+                "Ownable: caller is not the owner"
+              );
+            });
+
+            it("should revert if not valid address", async () => {
+              await expect(subject(ADDRESS_ZERO, owner)).to.be.revertedWith(
+                "LiteVault__InvalidParams"
               );
             });
           });
         });
       }
     );
-
-    describe("owner actions", async () => {
-      describe("setMinimumThresholdPercentage", async () => {
-        const subject = async (value: number, sender: SignerWithAddress) => {
-          return vault.connect(sender).setMinimumThresholdPercentage(value);
-        };
-
-        it("should setMinimumThresholdPercentage", async () => {
-          expect(
-            (await vault.minimumThresholdPercentage()).toNumber()
-          ).to.equal(10000000);
-
-          await subject(20000000, owner);
-
-          expect(
-            (await vault.minimumThresholdPercentage()).toNumber()
-          ).to.equal(20000000);
-        });
-
-        it("should revert if not owner", async () => {
-          await expect(subject(2000000, user1)).to.be.revertedWith(
-            "Ownable: caller is not the owner"
-          );
-        });
-
-        it("should revert if not valid percentage amount", async () => {
-          // setting > 100% e.g. 110% should not be possible
-          await expect(subject(110000000, owner)).to.be.revertedWith(
-            "LiteVault__InvalidParams"
-          );
-        });
-      });
-
-      describe("setRebalancer", async () => {
-        const subject = async (
-          addressToSet: string,
-          value: boolean,
-          sender: SignerWithAddress
-        ) => {
-          return vault.connect(sender).setRebalancer(addressToSet, value);
-        };
-
-        it("should setRebalancer flag true", async () => {
-          expect(await vault.isAllowedRebalancer(user1.address)).to.equal(
-            false
-          );
-
-          await subject(user1.address, true, owner);
-
-          expect(await vault.isAllowedRebalancer(user1.address)).to.equal(true);
-        });
-
-        it("should setRebalancer flag false", async () => {
-          await subject(user1.address, true, owner);
-
-          expect(await vault.isAllowedRebalancer(user1.address)).to.equal(true);
-
-          await subject(user1.address, false, owner);
-
-          expect(await vault.isAllowedRebalancer(user1.address)).to.equal(
-            false
-          );
-        });
-
-        it("should revert if not owner", async () => {
-          await expect(subject(user1.address, true, user1)).to.be.revertedWith(
-            "Ownable: caller is not the owner"
-          );
-        });
-      });
-
-      describe("setWithdrawFeeAbsoluteMin", async () => {
-        const subject = async (value: BigNumber, sender: SignerWithAddress) => {
-          return vault.connect(sender).setWithdrawFeeAbsoluteMin(value);
-        };
-
-        it("should setWithdrawFeeAbsoluteMin", async () => {
-          expect(
-            (await vault.withdrawFeeAbsoluteMin()).eq(toUsdcBigNumber(20))
-          ).to.equal(true);
-
-          await subject(toUsdcBigNumber(50), owner);
-
-          expect((await vault.withdrawFeeAbsoluteMin()).toNumber()).to.equal(
-            toUsdcBigNumber(50)
-          );
-        });
-
-        it("should revert if not owner", async () => {
-          await expect(subject(toUsdcBigNumber(50), user1)).to.be.revertedWith(
-            "Ownable: caller is not the owner"
-          );
-        });
-      });
-
-      describe("setWithdrawFeePercentage", async () => {
-        const subject = async (value: number, sender: SignerWithAddress) => {
-          return vault.connect(sender).setWithdrawFeePercentage(value);
-        };
-
-        it("should setWithdrawFeePercentage", async () => {
-          expect((await vault.withdrawFeePercentage()).toNumber()).to.equal(
-            10000
-          );
-
-          await subject(20000, owner);
-
-          expect((await vault.withdrawFeePercentage()).toNumber()).to.equal(
-            20000
-          );
-        });
-
-        it("should revert if not owner", async () => {
-          await expect(subject(20000, user1)).to.be.revertedWith(
-            "Ownable: caller is not the owner"
-          );
-        });
-
-        it("should revert if not valid percentage amount", async () => {
-          // setting > 100% e.g. 110% should not be possible
-          await expect(subject(110000000, owner)).to.be.revertedWith(
-            "LiteVault__InvalidParams"
-          );
-        });
-      });
-
-      describe("setWithdrawFeeReceiver", async () => {
-        const subject = async (value: string, sender: SignerWithAddress) => {
-          return vault.connect(sender).setWithdrawFeeReceiver(value);
-        };
-
-        it("should setWithdrawFeeReceiver", async () => {
-          expect(await vault.withdrawFeeReceiver()).to.equal(
-            withdrawFeeReceiver()
-          );
-
-          await subject(user2.address, owner);
-
-          expect(await vault.withdrawFeeReceiver()).to.equal(user2.address);
-        });
-
-        it("should revert if not owner", async () => {
-          await expect(subject(user1.address, user1)).to.be.revertedWith(
-            "Ownable: caller is not the owner"
-          );
-        });
-
-        it("should revert if not valid address", async () => {
-          await expect(subject(ADDRESS_ZERO, owner)).to.be.revertedWith(
-            "LiteVault__InvalidParams"
-          );
-        });
-      });
-
-      describe("setBridgeAddress", async () => {
-        const subject = async (value: string, sender: SignerWithAddress) => {
-          return vault.connect(sender).setBridgeAddress(value);
-        };
-
-        it("should setBridgeAddress", async () => {
-          expect(await vault.bridgeAddress()).to.equal(bridge.address);
-
-          await subject(user2.address, owner);
-
-          expect(await vault.bridgeAddress()).to.equal(user2.address);
-        });
-
-        it("should revert if not owner", async () => {
-          await expect(subject(user1.address, user1)).to.be.revertedWith(
-            "Ownable: caller is not the owner"
-          );
-        });
-
-        it("should revert if not valid address", async () => {
-          await expect(subject(ADDRESS_ZERO, owner)).to.be.revertedWith(
-            "LiteVault__InvalidParams"
-          );
-        });
-      });
-    });
   });
 
   function toUsdcBigNumber(amount: number) {
