@@ -7,7 +7,7 @@ import "./Errors.sol";
 abstract contract Modifiers is Variables {
     /// @notice checks if msg.sender is an allowed feeSetter
     modifier onlyAllowedFeeSetter() {
-        if (!allowedFeeSetters[msg.sender]) {
+        if (allowedFeeSetters[msg.sender] != true) {
             revert ExcessWithdrawHandler__Unauthorized();
         }
         _;
@@ -15,7 +15,7 @@ abstract contract Modifiers is Variables {
 
     /// @notice checks if msg.sender is an allowed fulfiller
     modifier onlyAllowedFulfiller() {
-        if (!allowedFulfillers[msg.sender]) {
+        if (allowedFulfillers[msg.sender] != true) {
             revert ExcessWithdrawHandler__Unauthorized();
         }
         _;

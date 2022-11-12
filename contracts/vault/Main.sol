@@ -105,7 +105,9 @@ abstract contract RebalancerActions is ERC4626Upgradeable, Modifiers, Events {
     /// @param _amountToMove (raw) amount of assets to transfer to bridge
     function toMainnet(uint256 _amountToMove) external onlyAllowedRebalancer {
         // amount of principal left must cover at least minimumThresholdAmount
-        uint256 principalLeft = investedAssets - _amountToMove;
+        uint256 principalLeft = IERC20Upgradeable(asset()).balanceOf(
+            address(this)
+        ) - _amountToMove;
         if (principalLeft < minimumThresholdAmount()) {
             revert LiteVault__MinimumThreshold();
         }
@@ -217,8 +219,12 @@ contract LiteVault is AdminActions, BridgeActions, RebalancerActions {
     /// @notice calculates the minimum threshold amount of asset that must stay in the contract
     /// @return minimumThresholdAmount
     function minimumThresholdAmount() public view override returns (uint256) {
+        uint256 _totalAssets = totalAssets();
+        if (_totalAssets == 0) {
+            return 0;
+        }
         return
-            investedAssets.mulDiv(
+            _totalAssets.mulDiv(
                 minimumThresholdPercentage,
                 1e8 // percentage is in 1e6( 1% is 1_000_000) here we want to have 100% as denominator
             );
@@ -237,6 +243,9 @@ contract LiteVault is AdminActions, BridgeActions, RebalancerActions {
     /// @notice calculates the total invested assets that are bridged
     /// @return amount of invested assets (currently bridged) adjusted for exchangePrice
     function totalInvestedAssets() public view returns (uint256) {
+        if (investedAssets == 0) {
+            return 0;
+        }
         // e.g. with mainnetExchangePrice is 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
         // (because asset on bridge has appreciated in value through yield over time)
         // 100 * 2 = 200;

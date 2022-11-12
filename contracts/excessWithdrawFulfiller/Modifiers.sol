@@ -7,7 +7,7 @@ import "./Errors.sol";
 abstract contract Modifiers is Variables {
     /// @notice checks if msg.sender is an allowed rebalancer on vault
     modifier onlyAllowedVaultRebalancer() {
-        if (!vault.allowedRebalancers(msg.sender)) {
+        if (vault.allowedRebalancers(msg.sender) != true) {
             revert ExcessWithdrawFulfiller__Unauthorized();
         }
         _;
@@ -15,7 +15,7 @@ abstract contract Modifiers is Variables {
 
     /// @notice checks if msg.sender is an allowed fulfiller on excessWithdrawHandler
     modifier onlyAllowedWithdrawHandlerFulfiller() {
-        if (!withdrawHandler.allowedFulfiller(msg.sender)) {
+        if (withdrawHandler.allowedFulfiller(msg.sender) != true) {
             revert ExcessWithdrawFulfiller__Unauthorized();
         }
         _;
