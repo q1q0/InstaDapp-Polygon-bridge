@@ -72,7 +72,11 @@ abstract contract AdminActions is
 
     /// @notice owner can withdraw the collected withdraw fees
     /// @param _withdrawFeeReceiver the receiver address for the fees transfer
-    function withdrawFees(address _withdrawFeeReceiver) internal onlyOwner {
+    function withdrawFees(address _withdrawFeeReceiver)
+        external
+        onlyOwner
+        validAddress(_withdrawFeeReceiver)
+    {
         IERC20Upgradeable(asset()).safeTransfer(
             _withdrawFeeReceiver,
             collectedFees

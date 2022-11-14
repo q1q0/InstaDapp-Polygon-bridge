@@ -799,6 +799,47 @@ describe("LiteVault", () => {
               );
             });
           });
+
+          describe("withdrawFees", async () => {
+            const subject = async (
+              receiver: string,
+              sender: SignerWithAddress
+            ) => {
+              return vault.connect(sender).withdrawFees(receiver);
+            };
+
+            it("should withdrawFees", async () => {
+              const initialBalance = await usdc.balanceOf(user1.address);
+
+              // withdraw with user 2 to generate some withdraw fees
+              await vault
+                .connect(user2)
+                .withdraw(defaultDepositAmount, user2.address, user2.address);
+
+              const withdrawableFees = await vault.collectedFees();
+              expect(withdrawableFees.gt(0)).to.equal(true);
+
+              await subject(user1.address, owner);
+
+              const afterBalance = await usdc.balanceOf(user1.address);
+
+              expect(
+                afterBalance.sub(initialBalance).eq(withdrawableFees)
+              ).to.equal(true);
+            });
+
+            it("should revert if not owner", async () => {
+              await expect(subject(user1.address, user1)).to.be.revertedWith(
+                "Ownable: caller is not the owner"
+              );
+            });
+
+            it("should revert if not valid address", async () => {
+              await expect(subject(ADDRESS_ZERO, owner)).to.be.revertedWith(
+                "LiteVault__InvalidParams"
+              );
+            });
+          });
         });
       }
     );
