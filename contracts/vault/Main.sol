@@ -293,6 +293,39 @@ contract LiteVault is AdminActions, BridgeActions, RebalancerActions {
         return assetsAfterFee;
     }
 
+    /// @notice redeemExcess allows to withdraw certain amount of assets but burn more shares than necessary (AT A LOSS).
+    /// DANGER: THIS IS INTENDED ONLY FOR THE EXCESS WITHDRAW HANDLER, USING THIS INCURS A LOSS.
+    /// @param _amountAssets desired amount of assets to withdraw
+    /// @param _sharesToBurn desired amount of shares to burn
+    function redeemExcess(uint256 _amountAssets, uint256 _sharesToBurn)
+        public
+        returns (uint256)
+    {
+        // Logic below adapted from OpenZeppelin ERC4626Upgradeable: added logic for fee and burn more shares
+        require(
+            _sharesToBurn <= maxRedeem(msg.sender),
+            "ERC4626: redeem more than max"
+        );
+
+        uint256 assets = previewRedeem(_sharesToBurn);
+        if (_amountAssets > assets) {
+            // amount of requested assets must be smaller or equal as possible assets for _burnShares
+            revert LiteVault__InvalidParams();
+        }
+
+        // burn full shares as requested but only withdraw assetsAfterFee
+        uint256 assetsAfterFee = _collectWithdrawFee(_amountAssets, msg.sender);
+        _withdraw(
+            msg.sender,
+            msg.sender,
+            msg.sender,
+            assetsAfterFee,
+            _sharesToBurn
+        );
+
+        return assetsAfterFee;
+    }
+
     /***********************************|
     |              INTERNAL             |
     |__________________________________*/
