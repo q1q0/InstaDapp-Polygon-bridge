@@ -603,6 +603,7 @@ describe("LiteVault", () => {
                 value: BigNumber,
                 sender: SignerWithAddress
               ) => {
+                // approve assets from bridge to vault
                 await usdc.connect(bridge).approve(vault.address, value);
 
                 return vault.connect(sender).fromMainnet(value);

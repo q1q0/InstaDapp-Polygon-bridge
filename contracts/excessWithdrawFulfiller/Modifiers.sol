@@ -15,7 +15,7 @@ abstract contract Modifiers is Variables {
 
     /// @notice checks if msg.sender is an allowed fulfiller on excessWithdrawHandler
     modifier onlyAllowedWithdrawHandlerFulfiller() {
-        if (withdrawHandler.allowedFulfiller(msg.sender) != true) {
+        if (withdrawHandler.allowedFulfillers(msg.sender) != true) {
             revert ExcessWithdrawFulfiller__Unauthorized();
         }
         _;
