@@ -53,6 +53,8 @@ Notes:
 
 ### Deploy
 
+#### Vault
+
 There is a hardhat task that will:
 
 - deploy the LiteVault
@@ -66,6 +68,22 @@ Usage:
   `npx hardhat deploy-vault <PROXY_ADMIN_ADDRESS> --network <HARDHAT_NETWORK>`
 
 `PROXY_ADMIN_ADDRESS` is the admin for the LiteVaultProxy.
+
+#### Periphery
+
+There is a hardhat task that will:
+
+- deploy the ExcessWithdrawHandler
+- deploy the ExcessWithdrawFulfiller
+
+Usage:
+
+- Set the `ALCHEMY_TOKEN_<NETWORK>` for the network you want to deploy to in `.env`, see .env.example
+- Add either the private key or mnemonic for the deployer address in `.env`
+- Run:
+  `npx hardhat deploy-periphery <VAULT_PROXY_ADDRESS> --network <HARDHAT_NETWORK>`
+- optionally you can set the initial penalty fee percentage, which otherwise defaults to 2% (with 1e6 decimals), e.g. 3%:
+  `npx hardhat deploy-periphery <VAULT_PROXY_ADDRESS> --fee 3000000 --network <HARDHAT_NETWORK>`
 
 ### Verify on Etherscan
 

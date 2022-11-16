@@ -10,6 +10,7 @@ import "solidity-coverage";
 import "hardhat-deploy";
 
 import "./scripts/deploy-vault-task";
+import "./scripts/deploy-periphery-task";
 
 interface Etherscan {
   etherscan: { apiKey: string | undefined };
