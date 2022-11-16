@@ -11,11 +11,7 @@ contract Events {
     );
 
     /// @notice emitted when anyone triggers an execute withdraw to receiver
-    event ExcessWithdrawExecuted(
-        address indexed receiver,
-        uint256 shares,
-        uint256 assets
-    );
+    event ExcessWithdrawExecuted(address indexed receiver, uint256 assets);
 
     /// @notice emitted when a feeSetter updates the current penalty fee
     event PenaltyFeeSet(uint32 penaltyFeePercentage);

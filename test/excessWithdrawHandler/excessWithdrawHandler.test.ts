@@ -425,6 +425,59 @@ describe("ExcessWithdrawHandler", () => {
         ).to.equal(true);
       });
 
+      it("should instantly execute withdraw if funds in contract cover requested amount", async () => {
+        // fill up withdrawHandler with funds
+        await usdc
+          .connect(await ethers.getSigner(usdcWhale))
+          .transfer(withdrawHandler.address, toUsdcBigNumber(5000), {
+            gasLimit: 500000,
+          });
+
+        const receiverInitialBalance = await usdc.balanceOf(user2.address);
+        const initialQueuedAmount = await withdrawHandler.totalQueuedAmount();
+
+        await subject();
+
+        expect(
+          initialQueuedAmount.lt(await withdrawHandler.totalQueuedAmount())
+        ).to.equal(true);
+        expect(
+          (await vault.balanceOf(withdrawHandler.address)).eq(
+            defaultDepositAmount
+          )
+        ).to.eq(true);
+
+        const receiverAfterBalance = await usdc.balanceOf(user2.address);
+        expect(
+          receiverAfterBalance
+            .sub(receiverInitialBalance)
+            .eq(toUsdcBigNumber(980)) // defaultDepositAmount - penaltyFee
+        ).to.equal(true);
+      });
+
+      it("should emit ExcessWithdrawExecuted if instantly execute withdraw", async () => {
+        // fill up withdrawHandler with funds
+        await usdc
+          .connect(await ethers.getSigner(usdcWhale))
+          .transfer(withdrawHandler.address, toUsdcBigNumber(5000), {
+            gasLimit: 500000,
+          });
+
+        const result = await subject();
+
+        const events = (await result.wait())?.events as Event[];
+        expect(events?.length).to.be.greaterThanOrEqual(1);
+        expect(events[events.length - 1]?.event).to.equal(
+          "ExcessWithdrawExecuted"
+        );
+        expect(events[events.length - 1]?.args?.receiver).to.equal(
+          user2.address
+        );
+        expect(
+          events[events.length - 1]?.args?.assets.eq(toUsdcBigNumber(980)) // defaultDepositAmount - penaltyFee
+        ).to.equal(true);
+      });
+
       it("should revert if assets = 0", async () => {
         await expect(
           withdrawHandler
@@ -530,6 +583,59 @@ describe("ExcessWithdrawHandler", () => {
         ).to.equal(true);
       });
 
+      it("should instantly execute redeem if funds in contract cover requested amount", async () => {
+        // fill up withdrawHandler with funds
+        await usdc
+          .connect(await ethers.getSigner(usdcWhale))
+          .transfer(withdrawHandler.address, toUsdcBigNumber(5000), {
+            gasLimit: 500000,
+          });
+
+        const receiverInitialBalance = await usdc.balanceOf(user2.address);
+        const initialQueuedAmount = await withdrawHandler.totalQueuedAmount();
+
+        await subject();
+
+        expect(
+          initialQueuedAmount.lt(await withdrawHandler.totalQueuedAmount())
+        ).to.equal(true);
+        expect(
+          (await vault.balanceOf(withdrawHandler.address)).eq(
+            defaultDepositAmount
+          )
+        ).to.eq(true);
+
+        const receiverAfterBalance = await usdc.balanceOf(user2.address);
+        expect(
+          receiverAfterBalance
+            .sub(receiverInitialBalance)
+            .eq(toUsdcBigNumber(980)) // defaultDepositAmount - penaltyFee
+        ).to.equal(true);
+      });
+
+      it("should emit ExcessWithdrawExecuted if instantly execute withdraw", async () => {
+        // fill up withdrawHandler with funds
+        await usdc
+          .connect(await ethers.getSigner(usdcWhale))
+          .transfer(withdrawHandler.address, toUsdcBigNumber(5000), {
+            gasLimit: 500000,
+          });
+
+        const result = await subject();
+
+        const events = (await result.wait())?.events as Event[];
+        expect(events?.length).to.be.greaterThanOrEqual(1);
+        expect(events[events.length - 1]?.event).to.equal(
+          "ExcessWithdrawExecuted"
+        );
+        expect(events[events.length - 1]?.args?.receiver).to.equal(
+          user2.address
+        );
+        expect(
+          events[events.length - 1]?.args?.assets.eq(toUsdcBigNumber(980)) // defaultDepositAmount - penaltyFee
+        ).to.equal(true);
+      });
+
       it("should revert if shares = 0", async () => {
         await expect(
           withdrawHandler
@@ -564,23 +670,21 @@ describe("ExcessWithdrawHandler", () => {
     });
 
     describe("executeExcessWithdraw", async () => {
-      beforeEach(async () => {
-        // fill up withdrawHandler with funds
-        await usdc
-          .connect(await ethers.getSigner(usdcWhale))
-          .transfer(withdrawHandler.address, toUsdcBigNumber(5000), {
-            gasLimit: 500000,
-          });
-      });
-
       const queueExcessWithdraw = async () => {
-        return withdrawHandler
+        await withdrawHandler
           .connect(user1)
           .queueExcessWithdraw(
             defaultDepositAmount,
             user2.address,
             penaltyFeePercentage + 1
           );
+
+        // fill up withdrawHandler with funds
+        await usdc
+          .connect(await ethers.getSigner(usdcWhale))
+          .transfer(withdrawHandler.address, toUsdcBigNumber(5000), {
+            gasLimit: 500000,
+          });
       };
       const subject = async () => {
         return withdrawHandler
@@ -635,9 +739,6 @@ describe("ExcessWithdrawHandler", () => {
         );
         expect(
           events[events.length - 1]?.args?.assets.eq(toUsdcBigNumber(980))
-        ).to.equal(true);
-        expect(
-          events[events.length - 1]?.args?.shares.eq(toUsdcBigNumber(980))
         ).to.equal(true);
       });
     });
