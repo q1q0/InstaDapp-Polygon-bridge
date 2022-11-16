@@ -26,9 +26,9 @@ const config: HardhatUserEtherscanConfig = {
     hardhat: {
       forking: {
         url: "https://polygon-mainnet.g.alchemy.com/v2/" + ALCHEMY_TOKEN,
-        blockNumber: 35220546,
+        blockNumber: 35364715,
       },
-      gasPrice: 20000000000,
+      gasPrice: 4985670377180,
       gas: 6000000,
     },
     localhost: {},

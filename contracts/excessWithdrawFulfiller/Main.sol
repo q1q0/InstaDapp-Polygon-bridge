@@ -29,15 +29,16 @@ contract ExcessWithdrawFulfiller is Variables, Events, Modifiers {
     /// @dev executes fromMainnet on vault and fromVault on withdrawHandler
     ///      this contract address must be an authorized rebalancer in vault and an authorized fulfiller in the withdrawHandler
     /// @param _amountToMove (raw) amount of assets to transfer to bridge
-    function fulfillExcessWithdraw(uint256 _amountToMove)
+    /// @param _sharesToBurn amount of locked iTokens (vault shares) to burn for the vault redeem
+    function fulfillExcessWithdraw(uint256 _amountToMove, uint256 _sharesToBurn)
         external
         onlyAllowedWithdrawHandlerFulfiller
         onlyAllowedVaultRebalancer
     {
         vault.fromMainnet(_amountToMove);
 
-        withdrawHandler.fromVault(_amountToMove);
+        withdrawHandler.fromVault(_amountToMove, _sharesToBurn);
 
-        emit ExcessWithdrawFulfilled(_amountToMove);
+        emit ExcessWithdrawFulfilled(_amountToMove, _sharesToBurn);
     }
 }

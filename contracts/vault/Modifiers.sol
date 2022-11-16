@@ -23,7 +23,7 @@ contract Modifiers is Variables {
 
     /// @notice checks if msg.sender is an allowed rebalancer
     modifier onlyAllowedRebalancer() {
-        if (!allowedRebalancers[msg.sender]) {
+        if (allowedRebalancers[msg.sender] != true) {
             revert LiteVault__Unauthorized();
         }
         _;

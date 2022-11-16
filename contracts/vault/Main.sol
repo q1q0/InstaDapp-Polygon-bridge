@@ -72,7 +72,11 @@ abstract contract AdminActions is
 
     /// @notice owner can withdraw the collected withdraw fees
     /// @param _withdrawFeeReceiver the receiver address for the fees transfer
-    function withdrawFees(address _withdrawFeeReceiver) internal onlyOwner {
+    function withdrawFees(address _withdrawFeeReceiver)
+        external
+        onlyOwner
+        validAddress(_withdrawFeeReceiver)
+    {
         IERC20Upgradeable(asset()).safeTransfer(
             _withdrawFeeReceiver,
             collectedFees
@@ -105,9 +109,11 @@ abstract contract RebalancerActions is ERC4626Upgradeable, Modifiers, Events {
     /// @param _amountToMove (raw) amount of assets to transfer to bridge
     function toMainnet(uint256 _amountToMove) external onlyAllowedRebalancer {
         // amount of principal left must cover at least minimumThresholdAmount
-        uint256 principalLeft = investedAssets - _amountToMove;
+        uint256 principalLeft = IERC20Upgradeable(asset()).balanceOf(
+            address(this)
+        ) - _amountToMove;
         if (principalLeft < minimumThresholdAmount()) {
-            revert LiteVault__MinimumThreshold();
+            revert LiteVault__ExceedMinimumThreshold();
         }
 
         // send amountToMove to bridge
@@ -217,8 +223,12 @@ contract LiteVault is AdminActions, BridgeActions, RebalancerActions {
     /// @notice calculates the minimum threshold amount of asset that must stay in the contract
     /// @return minimumThresholdAmount
     function minimumThresholdAmount() public view override returns (uint256) {
+        uint256 _totalAssets = totalAssets();
+        if (_totalAssets == 0) {
+            return 0;
+        }
         return
-            investedAssets.mulDiv(
+            _totalAssets.mulDiv(
                 minimumThresholdPercentage,
                 1e8 // percentage is in 1e6( 1% is 1_000_000) here we want to have 100% as denominator
             );
@@ -237,6 +247,9 @@ contract LiteVault is AdminActions, BridgeActions, RebalancerActions {
     /// @notice calculates the total invested assets that are bridged
     /// @return amount of invested assets (currently bridged) adjusted for exchangePrice
     function totalInvestedAssets() public view returns (uint256) {
+        if (investedAssets == 0) {
+            return 0;
+        }
         // e.g. with mainnetExchangePrice is 2 (1 unit on Mainnet is worth 2 raw tokens on Polygon)
         // (because asset on bridge has appreciated in value through yield over time)
         // 100 * 2 = 200;
@@ -280,6 +293,39 @@ contract LiteVault is AdminActions, BridgeActions, RebalancerActions {
         // burn full shares but only withdraw assetsAfterFee
         uint256 assetsAfterFee = _collectWithdrawFee(assets, _owner);
         _withdraw(msg.sender, _receiver, _owner, assetsAfterFee, _shares);
+
+        return assetsAfterFee;
+    }
+
+    /// @notice redeemExcess allows to withdraw certain amount of assets but burn more shares than necessary (AT A LOSS).
+    /// DANGER: THIS IS INTENDED ONLY FOR THE EXCESS WITHDRAW HANDLER, USING THIS INCURS A LOSS.
+    /// @param _amountAssets desired amount of assets to withdraw
+    /// @param _sharesToBurn desired amount of shares to burn
+    function redeemExcess(uint256 _amountAssets, uint256 _sharesToBurn)
+        public
+        returns (uint256)
+    {
+        // Logic below adapted from OpenZeppelin ERC4626Upgradeable: added logic for fee and burn more shares
+        require(
+            _sharesToBurn <= maxRedeem(msg.sender),
+            "ERC4626: redeem more than max"
+        );
+
+        uint256 assets = previewRedeem(_sharesToBurn);
+        if (_amountAssets > assets) {
+            // amount of requested assets must be smaller or equal as possible assets for _burnShares
+            revert LiteVault__InvalidParams();
+        }
+
+        // burn full shares as requested but only withdraw assetsAfterFee
+        uint256 assetsAfterFee = _collectWithdrawFee(_amountAssets, msg.sender);
+        _withdraw(
+            msg.sender,
+            msg.sender,
+            msg.sender,
+            assetsAfterFee,
+            _sharesToBurn
+        );
 
         return assetsAfterFee;
     }

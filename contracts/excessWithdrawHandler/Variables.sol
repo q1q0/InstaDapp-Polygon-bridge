@@ -20,13 +20,13 @@ contract Variables {
     /// @notice the current penaltyFeePercentage applied to any withdraw amount request
     /// this fee is to cover any cost for e.g. unwinding, slippages, deleveraging etc. on mainnet
     /// set and updated by bot (allowedFeeSetter) according to observations, as an absolute amount
-    uint32 penaltyFeePercentage; // 4 bytes
+    uint32 public penaltyFeePercentage; // 4 bytes
 
     /// @notice the LiteVault that this ExcessWithdrawHandler interacts with
     ILiteVault public immutable vault; // 20 bytes
 
     /// @notice queued withdraw amounts per receiver, the penaltyFee already subtracted
-    mapping(address => uint256) queuedWithdrawAmounts;
+    mapping(address => uint256) public queuedWithdrawAmounts;
 
     /// @notice the total amount of assets (raw) that is currently queued for excess withdraw, already subtracted the penaltyFee.
     /// @dev useful for the off-chain bot to keep the vault balance high enough

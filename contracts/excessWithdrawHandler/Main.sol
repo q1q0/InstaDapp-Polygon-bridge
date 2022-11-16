@@ -60,18 +60,20 @@ abstract contract FeeSetterActions is Modifiers, Events {
 /// @notice actions that allowed fulfillers can execute
 abstract contract FulfillerActions is Modifiers, Events {
     /// @param _amountToMove (raw) amount of assets to transfer from vault
-    function fromVault(uint256 _amountToMove) external onlyAllowedFulfiller {
-        uint256 shares = vault.previewWithdraw(_amountToMove);
-
+    /// @param _sharesToBurn amount of locked iTokens (vault shares) to burn for the vault redeem
+    function fromVault(uint256 _amountToMove, uint256 _sharesToBurn)
+        external
+        onlyAllowedFulfiller
+    {
         // no need to explicitly check that enough shares are locked in this contract,
-        // vault checks for that anyway when executing redeem.
+        // vault checks for that anyway when executing redeemExcess.
         // redeem shares from vault (burns them) and sends assets to this contract
-        vault.redeem(shares, address(this), address(this));
+        vault.redeemExcess(_amountToMove, _sharesToBurn);
 
         // update state for total queued amount
         totalQueuedAmount -= _amountToMove;
 
-        emit FromVault(_amountToMove, shares);
+        emit FromVault(_amountToMove, _sharesToBurn);
     }
 }
 
@@ -91,7 +93,12 @@ contract ExcessWithdrawHandler is
     |           CONSTRUCTOR             |
     |__________________________________*/
 
-    constructor(ILiteVault _vault) Ownable() Variables(_vault) {}
+    constructor(ILiteVault _vault, uint32 _penaltyFeePercentage)
+        Ownable()
+        Variables(_vault)
+    {
+        penaltyFeePercentage = _penaltyFeePercentage;
+    }
 
     /***********************************|
     |           PUBLIC API              |
@@ -158,10 +165,11 @@ contract ExcessWithdrawHandler is
         _validateExcessWithdrawRequest(_shares, _assets, _receiver);
 
         // get amount to queue AFTER penalty fee
-        uint256 queueAmount = _assets.mulDiv(
-            penaltyFeePercentage,
-            1e8 // percentage is in 1e6( 1% is 1_000_000) here we want to have 100% as denominator
-        );
+        uint256 queueAmount = _assets -
+            _assets.mulDiv( // fee = penaltyFeePercentage of _assets amount
+                penaltyFeePercentage,
+                1e8 // percentage is in 1e6( 1% is 1_000_000) here we want to have 100% as denominator
+            );
 
         // increase total queued amount of assets
         totalQueuedAmount += queueAmount;

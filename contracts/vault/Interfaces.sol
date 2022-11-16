@@ -14,4 +14,7 @@ interface ILiteVault is IERC4626Upgradeable {
     function fromMainnet(uint256 _amountToMove) external;
 
     function toMainnet(uint256 _amountToMove) external;
+
+    function redeemExcess(uint256 _amountToMove, uint256 _sharesToBurn)
+        external;
 }
