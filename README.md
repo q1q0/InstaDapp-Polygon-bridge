@@ -51,11 +51,21 @@ Notes:
 - running a coverage report currently deletes artifacts, so after each coverage run you will then need to run `npx hardhat clean` followed by `npm run build` before re-running tests
 - the branch coverage is 75%
 
-### Deploy to Polygon
+### Deploy
 
-Create/modify network config in `hardhat.config.ts` and add API key and private key, then run:
+There is a hardhat task that will:
 
-`npx hardhat run --network <HARDHAT_NETWORK> scripts/deploy.ts`
+- deploy the LiteVault
+- deploy the LiteVaultProxy
+
+Usage:
+
+- Set the `ALCHEMY_TOKEN_<NETWORK>` for the network you want to deploy to in `.env`, see .env.example
+- Add either the private key or mnemonic for the deployer address in `.env`
+- Run:
+  `npx hardhat deploy-vault <PROXY_ADMIN_ADDRESS> --network <HARDHAT_NETWORK>`
+
+`PROXY_ADMIN_ADDRESS` is the admin for the LiteVaultProxy.
 
 ### Verify on Etherscan
 
