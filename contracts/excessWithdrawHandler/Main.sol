@@ -145,8 +145,7 @@ contract ExcessWithdrawHandler is
         // transfer assets to _receiver
         IERC20Upgradeable(vault.asset()).safeTransfer(_receiver, assets);
 
-        uint256 shares = vault.convertToAssets(assets);
-        emit ExcessWithdrawExecuted(_receiver, shares, assets);
+        emit ExcessWithdrawExecuted(_receiver, assets);
     }
 
     /***********************************|
@@ -164,6 +163,9 @@ contract ExcessWithdrawHandler is
     ) internal {
         _validateExcessWithdrawRequest(_shares, _assets, _receiver);
 
+        // lock iTokens
+        vault.safeTransferFrom(msg.sender, address(this), _shares);
+
         // get amount to queue AFTER penalty fee
         uint256 queueAmount = _assets -
             _assets.mulDiv( // fee = penaltyFeePercentage of _assets amount
@@ -174,13 +176,28 @@ contract ExcessWithdrawHandler is
         // increase total queued amount of assets
         totalQueuedAmount += queueAmount;
 
-        // increase receiver withdrawable amount
-        queuedWithdrawAmounts[_receiver] += queueAmount;
+        IERC20Upgradeable asset = IERC20Upgradeable(vault.asset());
 
-        // lock iTokens
-        vault.safeTransferFrom(msg.sender, address(this), _shares);
+        // check if an instant withdraw is possible because funds sitting in contract cover the requested amount
+        if (asset.balanceOf(address(this)) >= queueAmount) {
+            // transfer assets to _receiver
+            IERC20Upgradeable(vault.asset()).safeTransfer(
+                _receiver,
+                queueAmount
+            );
 
-        emit ExcessWithdrawRequested(msg.sender, _receiver, _shares, _assets);
+            emit ExcessWithdrawExecuted(_receiver, queueAmount);
+        } else {
+            // increase receiver withdrawable amount
+            queuedWithdrawAmounts[_receiver] += queueAmount;
+
+            emit ExcessWithdrawRequested(
+                msg.sender,
+                _receiver,
+                _shares,
+                _assets
+            );
+        }
     }
 
     /// @dev validates an excess withdraw request input params & amount
