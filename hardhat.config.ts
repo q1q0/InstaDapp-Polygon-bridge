@@ -1,27 +1,20 @@
 import { config as dotEnvConfig } from "dotenv";
 dotEnvConfig();
 
-import { HardhatUserConfig, HttpNetworkUserConfig } from "hardhat/types";
+import { HttpNetworkUserConfig } from "hardhat/types";
+import { HardhatUserConfig } from "hardhat/config";
 
-import "@nomiclabs/hardhat-waffle";
-import "@typechain/hardhat";
-import "@nomiclabs/hardhat-etherscan";
-import "solidity-coverage";
+
+import "@nomicfoundation/hardhat-toolbox";
 import "hardhat-deploy";
 
 import "./scripts/deploy-vault-task";
 import "./scripts/deploy-periphery-task";
 
-interface Etherscan {
-  etherscan: { apiKey: string | undefined };
-}
-
-type HardhatUserEtherscanConfig = HardhatUserConfig & Etherscan;
-
 const {
   ALCHEMY_TOKEN_POLYGON,
   ALCHEMY_TOKEN_MUMBAI,
-  ETHERSCAN_API_KEY,
+  ETHERSCAN_API_KEY_POLYGON,
   DEPLOYER_PRIVATE_KEY,
   DEPLOYER_MNEMONIC,
 } = process.env;
@@ -39,7 +32,7 @@ if (DEPLOYER_PRIVATE_KEY) {
   };
 }
 
-const config: HardhatUserEtherscanConfig = {
+const config: HardhatUserConfig = {
   defaultNetwork: "hardhat",
   solidity: {
     compilers: [{ version: "0.8.17", settings: {} }],
@@ -70,7 +63,9 @@ const config: HardhatUserEtherscanConfig = {
   etherscan: {
     // Your API key for Etherscan
     // Obtain one at https://etherscan.io/
-    apiKey: ETHERSCAN_API_KEY,
+    apiKey: {
+      polygon: ETHERSCAN_API_KEY_POLYGON,
+    }
   },
   namedAccounts: {
     deployer: {
